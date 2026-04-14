@@ -1,36 +1,131 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Adventure Calendar
+
+A spontaneous daily challenge app powered by AI. Every day you unlock a new adventure — explore your city, try something new, and earn badges as you go. You can't unlock the next day until you complete today's challenge.
+
+> Built as a full-stack AI portfolio project using Next.js, Supabase, and the Anthropic API.
+
+---
+
+## Live Demo
+
+🔗 [adventure-calendar.vercel.app](https://adventure-calendar.vercel.app) *(coming soon)*
+
+---
+
+## Features
+
+- **30-day adventure calendar** — one AI-generated challenge unlocked per day
+- **Personalized challenges** — tailored to your neighborhood, food preferences, activity interests, budget, and availability
+- **AI-powered recommendations** — specific venue suggestions, routes, and pricing via the Anthropic API
+- **Progress tracking** — streak counter, calendar overview, completion history
+- **Badge system** — earn milestone and category badges as you complete challenges
+- **User authentication** — secure login and persistent progress via Supabase
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js (App Router) |
+| Styling | Tailwind CSS |
+| Database + Auth | Supabase (Postgres) |
+| AI / LLM | Anthropic Claude API |
+| Hosting | Vercel |
+
+---
+
+## Project Structure
+
+```
+adventure-calendar/
+├── app/
+│   ├── page.js                        # Home / calendar view
+│   ├── onboarding/page.js             # User preferences input
+│   ├── challenge/page.js              # Daily challenge detail
+│   └── badges/page.js                 # Badge collection
+├── app/api/
+│   ├── generate-challenge/route.js    # Anthropic API — AI challenge generation
+│   ├── complete-challenge/route.js    # Mark challenge done, unlock next day
+│   └── user-progress/route.js         # Fetch user progress from Supabase
+├── components/                        # Reusable UI components
+├── lib/
+│   ├── supabase.js                    # Supabase client
+│   └── prompts.js                     # AI prompt templates
+└── .env.local                         # Environment variables (not committed)
+```
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+
+- A [Supabase](https://supabase.com) account and project
+- An [Anthropic](https://console.anthropic.com) API key
+
+### Installation
+
+1. Clone the repo
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/YOURUSERNAME/adventure-calendar.git
+cd adventure-calendar
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables — create a `.env.local` file in the project root:
+```
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Run the development server
+```bash
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [x] Project setup — Next.js, Supabase, Anthropic API connected
+- [ ] Supabase database schema — users, challenges, progress, badges
+- [ ] User onboarding — preferences input flow
+- [ ] AI challenge generation — Anthropic API integration
+- [ ] Calendar UI — 30-day grid with lock/unlock logic
+- [ ] Challenge detail page — venue suggestions, routes, pricing
+- [ ] Badge system — milestone and category tracking
+- [ ] Vercel deployment
+- [ ] Mobile-responsive polish
+- [ ] Mobile app (Expo) — future
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Environment Variables
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon public key |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key (server-side only) |
+
+---
+
+## Author
+
+**Evan Nuss**
+[yourportfolio.com](https://yourportfolio.com) · [GitHub](https://github.com/Nussev) · [LinkedIn](https://linkedin.com/in/evannuss)
+
+---
+
+## License
+
+MIT
