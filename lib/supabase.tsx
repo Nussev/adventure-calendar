@@ -19,7 +19,12 @@ export interface Challenge {
   estimated_duration: string
   time_of_day: string | null
   venue_suggestion: string | null
+  venue_address: string | null
+  venue_price: string | null
+  route_tip: string | null
   ai_generated: boolean
+  user_id: string | null
+  generated_at: string | null
   created_at: string
 }
 

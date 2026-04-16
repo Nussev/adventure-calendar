@@ -1,73 +1,59 @@
 import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
+  const supabase = await createSupabaseServerClient()
+
+  // ── Auth ───────────────────────────────────────────────────
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    // ── Fetch progress + profile + earned badges in parallel ─
+    const [progressRes, profileRes, badgesRes] = await Promise.all([
+      supabase
+        .from('user_progress')
+        .select('*, challenge:challenges(*)')
+        .eq('user_id', user.id)
+        .order('day_number'),
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single(),
+      supabase
+        .from('user_badges')
+        .select('*, badge:badges(*)')
+        .eq('user_id', user.id)
+        .order('earned_at'),
+    ])
 
-    // Auth check
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (progressRes.error) throw new Error(`Progress: ${progressRes.error.message}`)
+    if (profileRes.error)  throw new Error(`Profile: ${profileRes.error.message}`)
+    if (badgesRes.error)   throw new Error(`Badges: ${badgesRes.error.message}`)
 
-    // Fetch all progress with challenge data joined
-    const { data: progress, error: progressError } = await supabase
-      .from('user_progress')
-      .select('*, challenge:challenges(*)')
-      .eq('user_id', user.id)
-      .order('day_number')
-
-    if (progressError) throw new Error(`Failed to fetch progress: ${progressError.message}`)
-
-    // Fetch user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError) throw new Error(`Failed to fetch profile: ${profileError.message}`)
-
-    // Fetch earned badges
-    const { data: badges, error: badgesError } = await supabase
-      .from('badges')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('earned_at')
-
-    if (badgesError) throw new Error(`Failed to fetch badges: ${badgesError.message}`)
-
-    // Calculate streak
-    const completedDays = (progress || [])
+    // ── Calculate streak ─────────────────────────────────────
+    const completedDays = (progressRes.data ?? [])
       .filter(p => p.completed_at)
       .map(p => p.day_number)
       .sort((a, b) => a - b)
 
     let streak = 0
-    const today = completedDays[completedDays.length - 1] || 0
+    const today = completedDays[completedDays.length - 1] ?? 0
     for (let i = completedDays.length - 1; i >= 0; i--) {
-      if (completedDays[i] === today - streak) {
-        streak++
-      } else break
+      if (completedDays[i] === today - streak) streak++
+      else break
     }
 
-    // Determine current active day
     const currentDay = Math.min(completedDays.length + 1, 30)
 
     return Response.json({
-      progress: progress || [],
-      profile,
-      badges: badges || [],
-      stats: {
-        completedDays: completedDays.length,
-        currentDay,
-        streak,
-        totalDays: 30,
-      }
+      progress: progressRes.data ?? [],
+      profile:  profileRes.data,
+      badges:   badgesRes.data ?? [],
+      stats: { completedDays: completedDays.length, currentDay, streak, totalDays: 30 },
     })
 
   } catch (err) {

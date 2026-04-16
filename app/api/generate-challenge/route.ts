@@ -1,22 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkAiGenerationLimit, recordAiGeneration, tooManyRequestsResponse } from '@/lib/rateLimit'
 
 const client = new Anthropic()
 
-// Rate limit map — in-memory per server instance
-const rateLimitMap = new Map<string, number[]>()
-
-function rateLimit(ip: string): boolean {
-  const now = Date.now()
-  const windowMs = 60 * 1000 // 1 minute
-  const max = 5
-
-  if (!rateLimitMap.has(ip)) rateLimitMap.set(ip, [])
-  const requests = rateLimitMap.get(ip)!.filter(t => now - t < windowMs)
-  requests.push(now)
-  rateLimitMap.set(ip, requests)
-  return requests.length <= max
+function sanitize(str: string): string {
+  return str.replace(/[^\w\s,&-]/g, '').slice(0, 100)
 }
 
 interface UserProfile {
@@ -44,58 +34,52 @@ interface GeneratedChallenge {
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = await createSupabaseServerClient()
+
+  // ── 1. Auth ────────────────────────────────────────────────
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // ── 2. Rate limit ──────────────────────────────────────────
+  const { allowed, retryAfterMs } = await checkAiGenerationLimit(user.id)
+  if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
+
+  // ── 3. Parse + sanitize ────────────────────────────────────
+  let body: { dayNumber: number; profile: UserProfile }
   try {
-    // Rate limiting
-    const ip = request.headers.get('x-forwarded-for') || 'unknown'
-    if (!rateLimit(ip)) {
-      return Response.json({ error: 'Too many requests' }, { status: 429 })
-    }
+    body = await request.json()
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
-    // Auth check
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  const { dayNumber, profile } = body
+  if (!dayNumber || !profile) {
+    return Response.json({ error: 'dayNumber and profile are required' }, { status: 400 })
+  }
 
-    // Check if challenge already generated today
-    const { data: existingProgress } = await supabase
-      .from('user_progress')
-      .select('completed_at, day_number')
-      .eq('user_id', user.id)
-      .order('day_number', { ascending: false })
-      .limit(1)
-      .single()
+  const city          = sanitize(profile.city ?? '')
+  const neighborhood  = sanitize(profile.neighborhood ?? '')
+  const activities    = (profile.activities ?? []).map(sanitize).filter(Boolean)
+  const foods         = (profile.foods ?? []).map(sanitize).filter(Boolean)
 
-    const body = await request.json()
-    const { dayNumber, profile }: { dayNumber: number; profile: UserProfile } = body
-
-    if (!dayNumber || !profile) {
-      return Response.json({ error: 'dayNumber and profile are required' }, { status: 400 })
-    }
-
-    // Sanitize inputs
-    const sanitize = (str: string) => str.replace(/[^\w\s,&\-]/g, '').slice(0, 100)
-    const safeCity = sanitize(profile.city)
-    const safeNeighborhood = sanitize(profile.neighborhood)
-
-    const prompt = `You are an expert local adventure guide for ${safeCity}.
+  // ── 4. Generate ────────────────────────────────────────────
+  try {
+    const prompt = `You are an expert local adventure guide for ${city}.
 
 Generate a single spontaneous daily challenge for Day ${dayNumber} of 30 for this person:
-- Neighborhood: ${safeNeighborhood}
-- Max distance: ${profile.distance}
-- Activity interests: ${profile.activities.join(', ')}
-- Food preferences: ${profile.foods.join(', ')}
-- Available times: ${profile.available_times.join(', ')}
-- Budget: ${profile.budget}
-- Time limit: ${profile.duration}
+- Neighborhood: ${neighborhood}
+- Max distance: ${sanitize(profile.distance ?? '')}
+- Activity interests: ${activities.join(', ') || 'general exploration'}
+- Food preferences: ${foods.join(', ') || 'open to anything'}
+- Available times: ${(profile.available_times ?? []).join(', ') || 'flexible'}
+- Budget: ${sanitize(profile.budget ?? '')}
+- Time limit: ${sanitize(profile.duration ?? '')}
 
 Rules:
 - The challenge must be completable within their time limit and budget
-- Suggest a REAL, specific venue or location in ${safeCity} near ${safeNeighborhood}
+- Suggest a REAL, specific venue or location in ${city} near ${neighborhood}
 - Make it spontaneous and slightly outside their comfort zone but achievable
 - Do NOT repeat obvious tourist traps
 
@@ -120,22 +104,22 @@ Respond ONLY with a valid JSON object, no markdown:
     })
 
     const raw = (message.content[0] as { type: string; text: string }).text.trim()
-    const clean = raw.replace(/```json|```/g, '').trim()
-    const challenge: GeneratedChallenge = JSON.parse(clean)
+    const challenge: GeneratedChallenge = JSON.parse(raw.replace(/```json|```/g, '').trim())
 
-    // Save generated challenge to Supabase
+    // ── 5. Save to challenges ──────────────────────────────────
     const { data: savedChallenge, error: saveError } = await supabase
       .from('challenges')
-      .upsert({
-        user_id: user.id,
-        day_number: dayNumber,
-        ...challenge,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,day_number' })
+      .upsert(
+        { user_id: user.id, day_number: dayNumber, ...challenge, ai_generated: true, generated_at: new Date().toISOString() },
+        { onConflict: 'user_id,day_number' }
+      )
       .select()
       .single()
 
     if (saveError) throw new Error(`Failed to save challenge: ${saveError.message}`)
+
+    // ── 6. Record rate limit ───────────────────────────────────
+    await recordAiGeneration(user.id, 'generate-challenge')
 
     return Response.json({ challenge: savedChallenge })
 

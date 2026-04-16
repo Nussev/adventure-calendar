@@ -45,6 +45,7 @@ interface NeighborhoodSuggestion {
 export default function ProfilePage() {
   const router = useRouter()
   const [loading, setLoading] = useState<boolean>(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [saving, setSaving] = useState<boolean>(false)
   const [saved, setSaved] = useState<boolean>(false)
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
@@ -64,6 +65,13 @@ export default function ProfilePage() {
   })
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('error_description') || params.get('error')
+    if (err) {
+      setAuthError(decodeURIComponent(err.replace(/\+/g, ' ')))
+      setLoading(false)
+      return
+    }
     loadProfile()
   }, [])
 
@@ -74,7 +82,7 @@ export default function ProfilePage() {
       setUser({ id: user.id, email: user.email })
 
       const { data: profile } = await supabase
-        .from('users')
+        .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
@@ -84,12 +92,12 @@ export default function ProfilePage() {
           full_name: profile.full_name || '',
           neighborhood: profile.neighborhood || '',
           city: profile.city || '',
-          distance: profile.distance || 'Within 1 mile',
-          activities: profile.activities || [],
-          foods: profile.foods || [],
+          distance: profile.max_distance || 'Within 1 mile',
+          activities: profile.preferred_activities || [],
+          foods: profile.preferred_foods || [],
           times: profile.available_times || [],
           budget: profile.budget || 'Under $25',
-          duration: profile.duration || '2 hours',
+          duration: profile.max_duration || '2 hours',
         })
       }
     } catch (err) {
@@ -152,26 +160,26 @@ export default function ProfilePage() {
     setSaved(false)
     try {
       const { error } = await supabase
-        .from('users')
+        .from('profiles')
         .upsert({
           id: user.id,
           full_name: form.full_name,
           neighborhood: form.neighborhood,
           city: form.city,
-          distance: form.distance,
-          activities: form.activities,
-          foods: form.foods,
+          max_distance: form.distance,
+          preferred_activities: form.activities,
+          preferred_foods: form.foods,
           available_times: form.times,
           budget: form.budget,
-          duration: form.duration,
-          onboarded: true,
-          updated_at: new Date().toISOString(),
+          max_duration: form.duration,
+          onboarding_completed: true,
         })
       if (error) throw error
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
-    } catch (err) {
-      console.error('Error saving profile:', err)
+    } catch (err: unknown) {
+      const e = err as Record<string, unknown>
+      console.error('Error saving profile:', e?.message ?? e?.code ?? JSON.stringify(err))
     } finally {
       setSaving(false)
     }
@@ -180,6 +188,22 @@ export default function ProfilePage() {
   async function handleSignOut() {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  if (authError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6 text-center">
+        <p className="text-sm font-medium text-red-500 mb-2">Sign-in failed</p>
+        <p className="text-sm text-stone-500 mb-6">{authError}</p>
+        <button
+          onClick={() => router.push('/login')}
+          className="px-6 py-2.5 rounded-xl text-sm font-medium text-white"
+          style={{ background: '#D85A30' }}
+        >
+          Back to login
+        </button>
+      </div>
+    )
   }
 
   if (loading) {

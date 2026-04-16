@@ -1,31 +1,30 @@
 import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 
 export async function POST(request: NextRequest) {
+  const supabase = await createSupabaseServerClient()
+
+  // ── Auth ───────────────────────────────────────────────────
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // ── Parse body ─────────────────────────────────────────────
+  let body: { challengeId: string; dayNumber: number; notes?: string }
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    body = await request.json()
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
-    // Auth check
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  const { challengeId, dayNumber, notes } = body
+  if (!challengeId || !dayNumber) {
+    return Response.json({ error: 'challengeId and dayNumber are required' }, { status: 400 })
+  }
 
-    const body = await request.json()
-    const { challengeId, dayNumber, notes }: {
-      challengeId: string
-      dayNumber: number
-      notes?: string
-    } = body
-
-    if (!challengeId || !dayNumber) {
-      return Response.json({ error: 'challengeId and dayNumber are required' }, { status: 400 })
-    }
-
-    // Mark challenge as complete
+  try {
+    // ── Mark complete ────────────────────────────────────────
     const { data: progress, error: progressError } = await supabase
       .from('user_progress')
       .upsert(
@@ -35,7 +34,7 @@ export async function POST(request: NextRequest) {
           day_number: dayNumber,
           completed_at: new Date().toISOString(),
           skipped: false,
-          notes: notes || null,
+          notes: notes ?? null,
         },
         { onConflict: 'user_id,day_number' }
       )
@@ -44,58 +43,55 @@ export async function POST(request: NextRequest) {
 
     if (progressError) throw new Error(`Failed to save progress: ${progressError.message}`)
 
-    // Check and award badges
+    // ── Fetch all completed days for streak + badge logic ────
     const { data: allProgress } = await supabase
       .from('user_progress')
       .select('day_number, completed_at')
       .eq('user_id', user.id)
       .not('completed_at', 'is', null)
 
-    const completedDays = allProgress?.length || 0
-    const newBadges: string[] = []
+    const completedDays = allProgress?.length ?? 0
 
-    const badgeMilestones: Record<number, string> = {
-      1: 'first_steps',
-      7: 'week_one',
-      15: 'halfway',
-      30: 'adventurer',
+    // ── Award milestone badges via user_badges ───────────────
+    const milestones: Record<number, string> = {
+      1:  'first-step',
+      7:  'week-one',
+      15: 'halfway-there',
+      30: 'full-calendar',
     }
 
-    for (const [milestone, badgeSlug] of Object.entries(badgeMilestones)) {
-      if (completedDays === Number(milestone)) {
+    const newBadges: string[] = []
+
+    if (milestones[completedDays]) {
+      const { data: badge } = await supabase
+        .from('badges')
+        .select('id')
+        .eq('slug', milestones[completedDays])
+        .single()
+
+      if (badge) {
         const { error: badgeError } = await supabase
-          .from('badges')
+          .from('user_badges')
           .upsert(
-            {
-              user_id: user.id,
-              slug: badgeSlug,
-              earned_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id,slug' }
+            { user_id: user.id, badge_id: badge.id, earned_at: new Date().toISOString() },
+            { onConflict: 'user_id,badge_id' }
           )
-        if (!badgeError) newBadges.push(badgeSlug)
+        if (!badgeError) newBadges.push(milestones[completedDays])
       }
     }
 
-    // Calculate current streak
-    const sortedDays = (allProgress || [])
+    // ── Calculate streak ─────────────────────────────────────
+    const sortedDays = (allProgress ?? [])
       .map(p => p.day_number)
       .sort((a, b) => a - b)
 
     let streak = 0
     for (let i = sortedDays.length - 1; i >= 0; i--) {
-      if (sortedDays[i] === dayNumber - streak) {
-        streak++
-      } else break
+      if (sortedDays[i] === dayNumber - streak) streak++
+      else break
     }
 
-    return Response.json({
-      progress,
-      newBadges,
-      completedDays,
-      streak,
-      nextDayUnlocked: dayNumber + 1,
-    })
+    return Response.json({ progress, newBadges, completedDays, streak, nextDayUnlocked: dayNumber + 1 })
 
   } catch (err) {
     console.error('Complete challenge error:', err)
