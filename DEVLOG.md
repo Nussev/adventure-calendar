@@ -103,3 +103,41 @@ Evan identified three gaps and flagged them for fixing:
 - Fixed: wired in the existing `checkAiGenerationLimit` / `recordAiGeneration`/`tooManyRequestsResponse` utilities from `lib/rateLimit.tsx`                  
 Session ID extracted from JWT and logged alongside the call                 
 **Thinking:** Evan proactively audited the route before it went to prod — good instinct. The sanitizer regex is intentionally strict (allowlist not denylist) because prompt injection vectors are hard to predict. Rate limiting was already built; it just needed connecting.
+
+---
+
+## April 19 2026
+
+### Native binary fix — lightningcss
+- Dev server was throwing `Cannot find module '../lightningcss.darwin-arm64.node'` at startup, blocking all CSS compilation
+- Root cause: the `.node` binary was missing from `node_modules/lightningcss/node/` — likely a partial install or cross-platform npm cache hit
+- Fix: `npm rebuild lightningcss` + `npm install lightningcss` to force a clean platform-specific binary; also cleared the stale `.next` cache (Turbopack had bundled the broken reference)
+- **Thinking:** native binaries don't survive copy/paste installs across machines or CI caches — when you see a `.node` resolution error, check the package's optional dependencies before reaching for `rm -rf node_modules`
+
+### Profile page UX — redirect after save
+- After saving preferences the button showed "Saved!" but left the user on the profile page with no path forward
+- Fix: replaced the 3-second `setTimeout(() => setSaved(false))` with `setTimeout(() => router.push('/'), 800)` — brief confirmation flash, then navigate home
+- Also removed an errant top-level `useRouter()` call that had been inserted outside the component body (React Rules of Hooks violation)
+- **Thinking:** "Saved!" with no action is a dead end on mobile — saving preferences implies you're done configuring and ready to use the app. The redirect completes the flow rather than leaving the user to figure out what's next
+
+### Real month calendar — native Date, no library
+- The original `CalendarGrid` was a 1–30 numbered streak tracker with no connection to real dates
+- Replaced with a true wall-calendar month view using only `new Date()`:
+  - Current month + year header with prev/next navigation
+  - Day-of-week labels (Sun–Sat)
+  - Proper first-day offset using `new Date(year, month, 1).getDay()`
+  - Today highlighted with coral ring, completed days filled coral with checkmark, future days muted
+  - "Today is [Weekday], [Month] [Date]" label shown when on the current month
+- Completed days are mapped backwards from today by the `completedDays` prop — no schema change needed
+- **Thinking:** a streak tracker that shows "Day 7 of 30" is motivating, but it doesn't tell you *when* you did things. A real calendar anchors the habit to your actual life — you can see you completed a challenge last Tuesday, not just that you're on day 7. Also: no calendar library needed for a month view; the built-in Date API handles all the math in ~15 lines
+
+### Single source of truth for daily challenge
+- The home page `ChallengeCard` had hardcoded defaults ("Morning Market Run", links to `/challenge/8`) while the detail page fetched real data from Supabase — they could never agree
+- `app/challenge/page.tsx` also had `CURRENT_DAY = 8` hardcoded
+- Fix: created `lib/getDailyChallenge.ts` with two exports:
+  - `getDayNumberForDate(date)` — pure function, converts a date to a stable 1–30 day number via `((dayOfYear - 1) % 30) + 1`. Same date always returns the same number. No state, no DB, testable in isolation
+  - `getDailyChallenge(date)` — wraps the above with `getChallengeByDay()` from the Supabase helper
+- Updated `app/page.tsx` to be async, call `getDailyChallenge()` server-side, pass real fields to `ChallengeCard`
+- Updated `ChallengeCard` to require explicit props (removed all defaults) — a missing prop is now a compile error, not a silent stale value
+- Updated `app/challenge/page.tsx` to redirect to `getDayNumberForDate()` instead of the hardcoded 8
+- **Thinking:** two components reading from different sources will diverge the moment the data changes — the fix isn't to sync them, it's to give them one source. The deterministic date hash means no DB call just to know which day it is, and the behavior is predictable: you can reason about what any date will return without running the app. Removing the hardcoded defaults from `ChallengeCard` turns a runtime inconsistency into a compile-time contract

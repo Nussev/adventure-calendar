@@ -1,12 +1,19 @@
 import Link from "next/link";
 
 export default function ChallengeCard({
-  title = "Morning Market Run",
-  description = "Head to your local farmers market and try one food you've never eaten before. Talk to a vendor and learn where it comes from.",
-  time = "1–2 hrs",
-  cost = "$5–15",
-  category = "Food & Culture",
-  href = "/challenge/8",
+  title,
+  description,
+  time,
+  cost,
+  category,
+  href,
+}: {
+  title: string
+  description: string
+  time: string
+  cost: string
+  category: string
+  href: string
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">

@@ -1,11 +1,14 @@
 import CalendarGrid from "@/components/CalendarGrid";
 import ChallengeCard from "@/components/ChallengeCard";
 import Link from "next/link";
+import { getDailyChallenge, getDayNumberForDate } from "@/lib/getDailyChallenge";
 
 const STREAK = 7;
 const TOTAL_DAYS = 30;
 
-export default function Home() {
+export default async function Home() {
+  const challenge = await getDailyChallenge();
+  const todayDayNumber = getDayNumberForDate();
   const progressPct = Math.round((STREAK / TOTAL_DAYS) * 100);
 
   return (
@@ -82,9 +85,16 @@ export default function Home() {
           {/* ── Today's Challenge ── */}
           <section className="mb-6">
             <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">
-              Day 8
+              Day {todayDayNumber}
             </h2>
-            <ChallengeCard />
+            <ChallengeCard
+              title={challenge.title}
+              description={challenge.description}
+              time={challenge.estimated_duration}
+              cost={challenge.estimated_cost}
+              category={challenge.category}
+              href={`/challenge/${todayDayNumber}`}
+            />
           </section>
         </div>
       </main>

@@ -176,7 +176,7 @@ export default function ProfilePage() {
         })
       if (error) throw error
       setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
+      setTimeout(() => router.push('/'), 800)
     } catch (err: unknown) {
       const e = err as Record<string, unknown>
       console.error('Error saving profile:', e?.message ?? e?.code ?? JSON.stringify(err))
