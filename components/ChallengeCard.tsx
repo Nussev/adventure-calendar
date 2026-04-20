@@ -11,7 +11,7 @@ export default function ChallengeCard({
   title: string
   description: string
   time: string
-  cost: string
+  cost?: string
   category: string
   href: string
 }) {
@@ -33,9 +33,11 @@ export default function ChallengeCard({
           <Tag label={time}>
             <ClockIcon />
           </Tag>
-          <Tag label={cost}>
-            <CostIcon />
-          </Tag>
+          {cost && (
+            <Tag label={cost}>
+              <CostIcon />
+            </Tag>
+          )}
           <Tag label={category}>
             <CompassIcon />
           </Tag>

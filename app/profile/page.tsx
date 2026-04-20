@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { clearChallengeCache } from '@/lib/getDailyChallenge'
 
 const ACTIVITIES: string[] = [
   'Outdoors', 'Art & culture', 'Food & drink', 'Music',
@@ -88,7 +89,7 @@ export default function ProfilePage() {
         .single()
 
       if (profile) {
-        setForm({
+        const prefs = {
           full_name: profile.full_name || '',
           neighborhood: profile.neighborhood || '',
           city: profile.city || '',
@@ -98,7 +99,14 @@ export default function ProfilePage() {
           times: profile.available_times || [],
           budget: profile.budget || 'Under $25',
           duration: profile.max_duration || '2 hours',
-        })
+        }
+        setForm(prefs)
+        // Keep localStorage in sync so getDailyChallenge can read prefs
+        // even before the user explicitly hits Save.
+        try {
+          const { full_name: _, ...adventurePrefs } = prefs
+          localStorage.setItem('adventurePreferences', JSON.stringify(adventurePrefs))
+        } catch {}
       }
     } catch (err) {
       console.error('Error loading profile:', err)
@@ -175,6 +183,25 @@ export default function ProfilePage() {
           onboarding_completed: true,
         })
       if (error) throw error
+
+      // Persist preferences locally so getDailyChallenge can read them
+      // without requiring a Supabase round-trip on every page load.
+      try {
+        localStorage.setItem('adventurePreferences', JSON.stringify({
+          city: form.city,
+          neighborhood: form.neighborhood,
+          distance: form.distance,
+          activities: form.activities,
+          foods: form.foods,
+          times: form.times,
+          budget: form.budget,
+          duration: form.duration,
+        }))
+        // Invalidate today's cached challenge so the next home-page visit
+        // generates a fresh one with the updated preferences.
+        clearChallengeCache()
+      } catch {}
+
       setSaved(true)
       setTimeout(() => router.push('/'), 800)
     } catch (err: unknown) {
