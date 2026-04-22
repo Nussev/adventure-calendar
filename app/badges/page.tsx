@@ -1,8 +1,7 @@
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import { BottomNav } from '@/components/BottomNav'
 
 // Slugs of badges the user has earned — hardcoded until auth lands
-// TODO: fetch from user_badges once auth is wired
 const EARNED_SLUGS = new Set(['first-step', 'week-one'])
 
 export default async function BadgesPage() {
@@ -17,55 +16,65 @@ export default async function BadgesPage() {
   const locked = badges?.filter(b => !EARNED_SLUGS.has(b.slug)) ?? []
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <main className="flex-1 max-w-md mx-auto w-full px-4 py-6 pb-24">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--background)" }}>
 
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-black text-gray-900">Badges</h1>
-          <p className="text-sm text-gray-400 mt-1">
-            {earned.length} of {badges?.length ?? 0} earned
-          </p>
+      {/* Scrollable content */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-md mx-auto px-4 pb-6">
+
+          {/* Header */}
+          <section className="pt-12 pb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D85A30] mb-2">
+              Achievements
+            </p>
+            <h1
+              className="text-[2.25rem] font-black tracking-tight leading-tight"
+              style={{ color: "var(--foreground)" }}
+            >
+              Badges
+            </h1>
+            <p className="mt-2 text-[0.925rem] font-medium" style={{ color: "var(--foreground)", opacity: 0.45 }}>
+              {earned.length} of {badges?.length ?? 0} earned
+            </p>
+          </section>
+
+          {/* Earned */}
+          {earned.length > 0 && (
+            <section className="mb-8">
+              <SectionLabel>Earned</SectionLabel>
+              <div className="grid grid-cols-2 gap-3">
+                {earned.map(badge => (
+                  <BadgeCard key={badge.id} badge={badge} earned />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Locked */}
+          {locked.length > 0 && (
+            <section>
+              <SectionLabel>Locked</SectionLabel>
+              <div className="grid grid-cols-2 gap-3">
+                {locked.map(badge => (
+                  <BadgeCard key={badge.id} badge={badge} earned={false} />
+                ))}
+              </div>
+            </section>
+          )}
+
         </div>
-
-        {/* Earned */}
-        {earned.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">
-              Earned
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {earned.map(badge => (
-                <BadgeCard key={badge.id} badge={badge} earned />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Locked */}
-        {locked.length > 0 && (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">
-              Locked
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {locked.map(badge => (
-                <BadgeCard key={badge.id} badge={badge} earned={false} />
-              ))}
-            </div>
-          </section>
-        )}
       </main>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg">
-        <div className="max-w-md mx-auto flex">
-          <NavItem href="/" label="Home"><HomeIcon /></NavItem>
-          <NavItem href="/badges" label="Badges" active><BadgeNavIcon /></NavItem>
-          <NavItem href="/profile" label="Profile"><ProfileIcon /></NavItem>
-        </div>
-      </nav>
+      <BottomNav active="badges" />
     </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-3" style={{ color: "var(--foreground)", opacity: 0.4 }}>
+      {children}
+    </p>
   )
 }
 
@@ -84,37 +93,55 @@ type Badge = {
 function BadgeCard({ badge, earned }: { badge: Badge; earned: boolean }) {
   return (
     <div
-      className={[
-        'rounded-2xl p-4 border flex flex-col gap-2',
+      className="rounded-2xl p-4 flex flex-col gap-2.5"
+      style={
         earned
-          ? 'bg-white border-gray-100 shadow-sm'
-          : 'bg-gray-50 border-gray-100',
-      ].join(' ')}
+          ? {
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 2px 8px rgba(216,90,48,0.06), 0 1px 3px rgba(0,0,0,0.04)",
+            }
+          : {
+              background: "var(--locked-bg)",
+              border: "1px solid var(--border)",
+            }
+      }
     >
       {/* Icon */}
       <div
-        className={[
-          'w-11 h-11 rounded-xl flex items-center justify-center',
-          earned ? 'bg-[#D85A30]' : 'bg-gray-200',
-        ].join(' ')}
+        className="w-11 h-11 rounded-xl flex items-center justify-center"
+        style={
+          earned
+            ? { background: "linear-gradient(135deg, #D85A30 0%, #f97316 100%)" }
+            : { background: "var(--locked-icon)" }
+        }
       >
-        <span className={`w-5 h-5 ${earned ? 'text-white' : 'text-gray-400'}`}>
+        <span className="w-5 h-5" style={{ color: earned ? "#fff" : "var(--foreground)", opacity: earned ? 1 : 0.3 }}>
           <BadgeIcon slug={badge.slug} />
         </span>
       </div>
 
       {/* Text */}
       <div>
-        <p className={`text-sm font-bold leading-tight ${earned ? 'text-gray-900' : 'text-gray-400'}`}>
+        <p
+          className="text-sm font-bold leading-tight"
+          style={{ color: earned ? "var(--foreground)" : "var(--foreground)", opacity: earned ? 1 : 0.35 }}
+        >
           {badge.name}
         </p>
-        <p className={`text-xs mt-0.5 leading-snug ${earned ? 'text-gray-500' : 'text-gray-400'}`}>
+        <p
+          className="text-xs mt-0.5 leading-snug"
+          style={{ color: "var(--foreground)", opacity: earned ? 0.5 : 0.3 }}
+        >
           {badge.description}
         </p>
       </div>
 
       {earned && (
-        <span className="self-start text-[10px] font-semibold uppercase tracking-wider text-[#D85A30] bg-orange-50 px-2 py-0.5 rounded-full">
+        <span
+          className="self-start text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
+          style={{ color: "#D85A30", background: "var(--accent-light)" }}
+        >
           Earned
         </span>
       )}
@@ -140,27 +167,6 @@ function BadgeIcon({ slug }: { slug: string }) {
     'full-calendar': <TrophyIcon />,
   }
   return <>{icons[slug] ?? <StarIcon />}</>
-}
-
-// ── Nav helpers ───────────────────────────────────────────────
-
-function NavItem({
-  href, label, active = false, children,
-}: {
-  href: string; label: string; active?: boolean; children: React.ReactNode
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        'flex-1 flex flex-col items-center justify-center py-3 gap-1 text-xs font-semibold transition-colors',
-        active ? 'text-[#D85A30]' : 'text-gray-400 hover:text-gray-600',
-      ].join(' ')}
-    >
-      <span className="w-6 h-6">{children}</span>
-      <span>{label}</span>
-    </Link>
-  )
 }
 
 // ── SVG icons ─────────────────────────────────────────────────
@@ -205,13 +211,4 @@ function TrophyIcon() {
 }
 function StarIcon() {
   return <svg viewBox="0 0 24 24" {...stroke}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-}
-function HomeIcon() {
-  return <svg viewBox="0 0 24 24" {...stroke}><path d="M3 12L12 3l9 9"/><path d="M9 21V12h6v9"/><path d="M3 12v9h18V12"/></svg>
-}
-function BadgeNavIcon() {
-  return <svg viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="8" r="6"/><path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72m2.54-15.38c-3.72 4.35-8.94 5.66-16.88 5.85m19.5 1.9c-3.5-.93-6.63-.82-8.94 0-2.58.92-5.01 2.86-7.44 6.32"/></svg>
-}
-function ProfileIcon() {
-  return <svg viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
 }

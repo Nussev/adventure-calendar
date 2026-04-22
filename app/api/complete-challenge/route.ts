@@ -24,7 +24,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // ── Mark complete ────────────────────────────────────────
+    const completedAt = new Date().toISOString()
+
+    // ── Mark complete in challenges table ────────────────────
+    await supabase
+      .from('challenges')
+      .update({ is_completed: true, completed_at: completedAt })
+      .eq('id', challengeId)
+      .eq('user_id', user.id)
+
+    // ── Mirror to user_progress for streak + badge logic ────
     const { data: progress, error: progressError } = await supabase
       .from('user_progress')
       .upsert(
@@ -32,7 +41,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           challenge_id: challengeId,
           day_number: dayNumber,
-          completed_at: new Date().toISOString(),
+          completed_at: completedAt,
           skipped: false,
           notes: notes ?? null,
         },

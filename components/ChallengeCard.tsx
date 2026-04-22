@@ -16,16 +16,37 @@ export default function ChallengeCard({
   href: string
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
-      <div className="h-1.5 bg-[#D85A30]" />
+    <div
+      className="rounded-3xl overflow-hidden"
+      style={{
+        background: "var(--card)",
+        border: "1px solid var(--border)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04), 0 8px 32px rgba(216,90,48,0.08)",
+      }}
+    >
+      {/* Gradient accent bar */}
+      <div
+        className="h-[3px] w-full"
+        style={{ background: "linear-gradient(90deg, #D85A30 0%, #f97316 60%, #fbbf24 100%)" }}
+      />
+
       <div className="p-5">
-        <p className="text-xs font-semibold uppercase tracking-widest text-[#D85A30] mb-1">
+        <p
+          className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1.5"
+          style={{ color: "#D85A30" }}
+        >
           Today&apos;s Challenge
         </p>
-        <h2 className="text-xl font-extrabold text-gray-900 mb-2 leading-tight">
+        <h2
+          className="text-[1.3rem] font-extrabold mb-2 leading-snug"
+          style={{ color: "var(--foreground)" }}
+        >
           {title}
         </h2>
-        <p className="text-sm text-gray-600 leading-relaxed mb-4">
+        <p
+          className="text-[0.875rem] leading-relaxed mb-4"
+          style={{ color: "var(--foreground)", opacity: 0.55 }}
+        >
           {description}
         </p>
 
@@ -45,7 +66,11 @@ export default function ChallengeCard({
 
         <Link
           href={href}
-          className="block w-full text-center bg-[#D85A30] hover:bg-[#c04f28] active:bg-[#a8431f] text-white font-bold py-3 rounded-xl transition-colors text-sm tracking-wide"
+          className="block w-full text-center text-white font-bold py-3 rounded-xl transition-all text-sm tracking-wide active:scale-[0.98]"
+          style={{
+            background: "linear-gradient(135deg, #D85A30 0%, #e8693e 100%)",
+            boxShadow: "0 4px 14px rgba(216,90,48,0.35)",
+          }}
         >
           View today&apos;s challenge →
         </Link>
@@ -56,7 +81,14 @@ export default function ChallengeCard({
 
 function Tag({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 bg-orange-50 text-[#D85A30] text-xs font-semibold px-3 py-1.5 rounded-full border border-orange-100">
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full"
+      style={{
+        background: "var(--accent-light)",
+        color: "#D85A30",
+        border: "1px solid rgba(216,90,48,0.12)",
+      }}
+    >
       <span className="w-3.5 h-3.5 shrink-0">{children}</span>
       {label}
     </span>

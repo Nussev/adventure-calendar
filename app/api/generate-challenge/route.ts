@@ -1,124 +1,330 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
 import { checkAiGenerationLimit, recordAiGeneration, tooManyRequestsResponse } from '@/lib/rateLimit'
+import { searchVenuesForChallenge, formatVenuesForPrompt, type PlaceResult } from '@/lib/googlePlaces'
 
-const client = new Anthropic()
+const anthropic = new Anthropic()
 
-function sanitize(str: string): string {
-  return str.replace(/[^\w\s,&-]/g, '').slice(0, 100)
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
 }
 
+function sanitize(str: string): string {
+  return str.replace(/[^\w\s,&\-'.]/g, '').slice(0, 120)
+}
+function sanitizeArr(arr: string[]): string[] {
+  return arr.map(sanitize).filter(Boolean)
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface UserProfile {
-  neighborhood: string
-  city: string
-  distance: string
-  activities: string[]
-  foods: string[]
-  available_times: string[]
-  budget: string
-  duration: string
+  city:                   string | null
+  neighborhood:           string | null
+  max_distance:           string | null
+  preferred_activities:   string[]
+  preferred_foods:        string[]
+  preferred_venue_types:  string[]
+  available_times:        string[]
+  budget:                 string | null
+  max_duration:           string | null
+}
+
+export interface VenueStop {
+  order:         number
+  venue_name:    string
+  venue_address: string
+  venue_type:    string
+  what_to_do:    string   // what the user should specifically do at this stop
+  google_rating: number | null
+  review_count:  number | null
+  price_level:   string | null
+  tip:           string   // one practical tip for this stop
 }
 
 interface GeneratedChallenge {
-  title: string
-  description: string
-  category: string
-  estimated_cost: string
+  title:              string
+  description:        string   // 2-3 sentence teaser for the whole adventure
+  category:           string
   estimated_duration: string
-  time_of_day: string
-  venue_suggestion: string
-  venue_address: string
-  venue_price: string
-  route_tip: string
+  estimated_cost:     string
+  time_of_day:        string
+  difficulty:         string
+  venue_stops:        VenueStop[]
 }
 
-export async function POST(request: NextRequest) {
-  const supabase = await createSupabaseServerClient()
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // ── 1. Auth ────────────────────────────────────────────────
+function dayNumberFromDateStr(dateStr: string): number {
+  const date = new Date(dateStr)
+  const start = new Date(date.getFullYear(), 0, 1)
+  const dayOfYear = Math.floor((date.getTime() - start.getTime()) / 86_400_000) + 1
+  return ((dayOfYear - 1) % 30) + 1
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
+
+export async function POST(request: NextRequest) {
+
+  // ── 1. Auth ────────────────────────────────────────────────────────────────
+  const supabase = await createSupabaseServerClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // ── 2. Rate limit ──────────────────────────────────────────
-  const { allowed, retryAfterMs } = await checkAiGenerationLimit(user.id)
-  if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
-
-  // ── 3. Parse + sanitize ────────────────────────────────────
-  let body: { dayNumber: number; profile: UserProfile }
+  // ── 2. Parse body ──────────────────────────────────────────────────────────
+  // Accepts { challengeDate, force } (new) or { dayNumber } (legacy).
+  let challengeDate: string
+  let dayNumber: number
+  let force = false
   try {
-    body = await request.json()
+    const body = await request.json()
+    force = body.force === true
+
+    if (body.challengeDate && typeof body.challengeDate === 'string') {
+      challengeDate = body.challengeDate
+      dayNumber = dayNumberFromDateStr(challengeDate)
+    } else if (body.dayNumber && typeof body.dayNumber === 'number') {
+      dayNumber = body.dayNumber
+      challengeDate = new Date().toISOString().split('T')[0]
+    } else {
+      throw new Error()
+    }
   } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return Response.json({ error: 'challengeDate (string) or dayNumber (number) is required' }, { status: 400 })
   }
 
-  const { dayNumber, profile } = body
-  if (!dayNumber || !profile) {
-    return Response.json({ error: 'dayNumber and profile are required' }, { status: 400 })
+  const serviceClient = getServiceClient()
+
+  // ── 3. DB cache check — skip Anthropic if row already exists ───────────────
+  if (!force) {
+    const { data: existing } = await serviceClient
+      .from('challenges')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('challenge_date', challengeDate)
+      .maybeSingle()
+
+    if (existing) return Response.json({ challenge: existing })
   }
 
-  const city          = sanitize(profile.city ?? '')
-  const neighborhood  = sanitize(profile.neighborhood ?? '')
-  const activities    = (profile.activities ?? []).map(sanitize).filter(Boolean)
-  const foods         = (profile.foods ?? []).map(sanitize).filter(Boolean)
+  // ── 4. Rate limit — skipped on force re-roll, charged otherwise ───────────
+  if (!force) {
+    const { allowed, retryAfterMs } = await checkAiGenerationLimit(user.id)
+    if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
+  }
 
-  // ── 4. Generate ────────────────────────────────────────────
-  try {
-    const prompt = `You are an expert local adventure guide for ${city}.
+  // ── 5. Fetch user preferences from Supabase (source of truth) ─────────────
+  const { data: profile, error: profileError } = await serviceClient
+    .from('profiles')
+    .select(`
+      city, neighborhood, max_distance,
+      preferred_activities, preferred_foods, preferred_venue_types,
+      available_times, budget, max_duration
+    `)
+    .eq('id', user.id)
+    .single<UserProfile>()
 
-Generate a single spontaneous daily challenge for Day ${dayNumber} of 30 for this person:
-- Neighborhood: ${neighborhood}
-- Max distance: ${sanitize(profile.distance ?? '')}
-- Activity interests: ${activities.join(', ') || 'general exploration'}
-- Food preferences: ${foods.join(', ') || 'open to anything'}
-- Available times: ${(profile.available_times ?? []).join(', ') || 'flexible'}
-- Budget: ${sanitize(profile.budget ?? '')}
-- Time limit: ${sanitize(profile.duration ?? '')}
+  if (profileError || !profile) {
+    return Response.json({ error: 'Could not load user profile' }, { status: 500 })
+  }
 
-Rules:
-- The challenge must be completable within their time limit and budget
-- Suggest a REAL, specific venue or location in ${city} near ${neighborhood}
-- Make it spontaneous and slightly outside their comfort zone but achievable
-- Do NOT repeat obvious tourist traps
+  // ── 6. Sanitize all preference values before they touch the prompt ──────────
+  const city        = sanitize(profile.city ?? '')
+  const neighborhood = sanitize(profile.neighborhood ?? '')
+  const distance    = sanitize(profile.max_distance ?? 'nearby')
+  const budget      = sanitize(profile.budget ?? 'flexible')
+  const duration    = sanitize(profile.max_duration ?? 'a few hours')
+  const activities  = sanitizeArr(profile.preferred_activities ?? [])
+  const foods       = sanitizeArr(profile.preferred_foods ?? [])
+  const venueTypes  = sanitizeArr(profile.preferred_venue_types ?? [])
+  const times       = sanitizeArr(profile.available_times ?? [])
 
-Respond ONLY with a valid JSON object, no markdown:
+  if (!city) {
+    return Response.json(
+      { error: 'Please set your city in Profile → Preferences before generating a challenge.' },
+      { status: 422 }
+    )
+  }
+
+  // ── 7. Fetch real venues from Google Places ────────────────────────────────
+  //
+  // We run searches in parallel for up to 3 of the user's venue type preferences.
+  // Each search returns up to 5 real, rated venues from Google.
+  // These become the "menu" Claude selects from — so it never has to hallucinate names.
+  //
+  let googleVenues: PlaceResult[] = []
+  let venueContext = ''
+
+  if (venueTypes.length > 0) {
+    googleVenues = await searchVenuesForChallenge(venueTypes, city, neighborhood, 5)
+
+    if (googleVenues.length > 0) {
+      // Group venues by the type that was searched so the prompt is readable
+      const grouped = venueTypes.slice(0, 3).map(type => {
+        // Re-slice the results loosely by position (they're already sorted by rating)
+        const slice = googleVenues.slice(0, 5)
+        return `${type.toUpperCase()}:\n${formatVenuesForPrompt(slice, type)}`
+      })
+      venueContext = `
+I searched Google Places and found these REAL, highly-rated venues near ${neighborhood ? `${neighborhood}, ` : ''}${city}:
+
+${grouped.join('\n\n')}
+
+You MUST choose 2-3 venues from the list above for the challenge stops.
+Do not invent any other venue names — only use venues from this list.`
+    }
+  }
+
+  // Fallback when no venue types are set or Google returned nothing
+  const noVenueData = googleVenues.length === 0
+  if (noVenueData) {
+    venueContext = `
+No specific venue data is available. Use your knowledge of well-known, real, highly-rated venues in ${neighborhood ? `${neighborhood}, ` : ''}${city}.
+Only name venues you are confident actually exist — if uncertain, describe the type of place without a specific name.`
+  }
+
+  // ── 8. Build the prompt ────────────────────────────────────────────────────
+  const prompt = `You are a spontaneous adventure planner for ${city}.
+
+USER PREFERENCES:
+- City/area: ${city}${neighborhood ? `, ${neighborhood}` : ''}
+- Max travel distance: ${distance}
+- Activity interests: ${activities.join(', ') || 'open to anything'}
+- Food & drink interests: ${foods.join(', ') || 'open to anything'}
+- Available: ${times.join(', ') || 'flexible'}
+- Budget: ${budget}
+- Time available: ${duration}
+${venueContext}
+
+YOUR TASK:
+Create a multi-stop spontaneous adventure with 2-3 specific venue stops.
+
+RULES:
+1. Each stop must be a specific, named venue — not generic ("a bar") or made-up.
+2. ${noVenueData ? 'Only name venues you are confident exist in ' + city + '.' : 'Only use venues from the Google Places list above.'}
+3. Each stop needs a clear "what to do" — not just "visit this place" but "order the X, sit at the Y, try the Z".
+4. The stops should flow together as an evening/afternoon/morning out — they should be geographically sensible (walkable or a short transit ride between them).
+5. The challenge must fit within the user's time and budget.
+6. Make it feel genuinely spontaneous — not a typical tourist itinerary.
+
+Respond ONLY with a single valid JSON object. No markdown, no explanation.
+
 {
-  "title": "Short punchy challenge title (5 words max)",
-  "description": "2-3 sentence description of what they should do and why it will be great",
-  "category": "One of: Outdoors, Food & drink, Art & culture, Music, Social, Fitness, Hidden gem",
-  "estimated_cost": "e.g. Free, $10-15, $20-30",
-  "estimated_duration": "e.g. 1 hour, 2 hours",
-  "time_of_day": "Morning, Afternoon, or Evening",
-  "venue_suggestion": "Specific venue or location name",
-  "venue_address": "Full street address",
-  "venue_price": "e.g. Free, $15/person, $8 entry",
-  "route_tip": "One sentence on how to get there or best approach"
+  "title": "Punchy adventure title, 5 words max",
+  "description": "2-3 sentences selling the whole adventure — make it exciting",
+  "category": "One of: Food & drink, Art & culture, Music, Outdoors, Social, Fitness, Hidden gem",
+  "difficulty": "easy | medium | hard",
+  "estimated_duration": "e.g. 3 hours, Half a day",
+  "estimated_cost": "e.g. Under $30, $40-60 per person",
+  "time_of_day": "Morning | Afternoon | Evening | Night",
+  "venue_stops": [
+    {
+      "order": 1,
+      "venue_name": "Exact name of the venue",
+      "venue_address": "Full street address",
+      "venue_type": "Restaurant | Bar | Coffee shop | Museum | Gallery | Park | Music venue | Market | Other",
+      "what_to_do": "2-3 sentences: exactly what to do, order, or experience at this stop",
+      "google_rating": 4.5,
+      "review_count": 312,
+      "price_level": "$ | $$ | $$$ | $$$$",
+      "tip": "One practical tip — timing, what to avoid, insider knowledge"
+    }
+  ]
 }`
 
-    const message = await client.messages.create({
+  // ── 9. Call Anthropic ──────────────────────────────────────────────────────
+  try {
+    const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
     })
 
     const raw = (message.content[0] as { type: string; text: string }).text.trim()
-    const challenge: GeneratedChallenge = JSON.parse(raw.replace(/```json|```/g, '').trim())
+    const challenge = JSON.parse(
+      raw.replace(/```json\n?|```/g, '').trim()
+    ) as GeneratedChallenge
 
-    // ── 5. Save to challenges ──────────────────────────────────
-    const { data: savedChallenge, error: saveError } = await supabase
+    // Annotate each stop with real Google data if we have it
+    if (googleVenues.length > 0 && challenge.venue_stops) {
+      challenge.venue_stops = challenge.venue_stops.map(stop => {
+        const match = googleVenues.find(
+          v => v.name.toLowerCase().includes(stop.venue_name.toLowerCase()) ||
+               stop.venue_name.toLowerCase().includes(v.name.toLowerCase())
+        )
+        if (match) {
+          return {
+            ...stop,
+            venue_address: match.address || stop.venue_address,
+            google_rating: match.rating ?? stop.google_rating,
+            review_count:  match.reviewCount ?? stop.review_count,
+            price_level:   match.priceLevel ?? stop.price_level,
+          }
+        }
+        return stop
+      })
+    }
+
+    // ── 10. Save to database — insert or overwrite (force) ──────────────────
+    const challengeRow = {
+      user_id:            user.id,
+      day_number:         dayNumber,
+      challenge_date:     challengeDate,
+      title:              challenge.title,
+      description:        challenge.description,
+      category:           challenge.category,
+      difficulty:         challenge.difficulty,
+      estimated_duration: challenge.estimated_duration,
+      estimated_cost:     challenge.estimated_cost,
+      time_of_day:        challenge.time_of_day,
+      venue_stops:        challenge.venue_stops,
+      ai_generated:       true,
+      generated_at:       new Date().toISOString(),
+      is_completed:       false,
+      completed_at:       null,
+    }
+
+    // Check for an existing row to decide insert vs update
+    const { data: existingForUpdate } = await serviceClient
       .from('challenges')
-      .upsert(
-        { user_id: user.id, day_number: dayNumber, ...challenge, ai_generated: true, generated_at: new Date().toISOString() },
-        { onConflict: 'user_id,day_number' }
-      )
-      .select()
-      .single()
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('challenge_date', challengeDate)
+      .maybeSingle()
 
-    if (saveError) throw new Error(`Failed to save challenge: ${saveError.message}`)
+    let savedChallenge: Record<string, unknown> | null = null
+    let saveError: { message: string } | null = null
 
-    // ── 6. Record rate limit ───────────────────────────────────
+    if (existingForUpdate) {
+      const { data, error } = await serviceClient
+        .from('challenges')
+        .update(challengeRow)
+        .eq('id', existingForUpdate.id)
+        .select()
+        .single()
+      savedChallenge = data
+      saveError = error
+    } else {
+      const { data, error } = await serviceClient
+        .from('challenges')
+        .insert(challengeRow)
+        .select()
+        .single()
+      savedChallenge = data
+      saveError = error
+    }
+
+    if (saveError) throw new Error(`DB save failed: ${saveError.message}`)
+
+    // ── 11. Record for rate limiting ─────────────────────────────────────────
     await recordAiGeneration(user.id, 'generate-challenge')
 
     return Response.json({ challenge: savedChallenge })

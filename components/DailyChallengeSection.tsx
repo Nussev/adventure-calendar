@@ -5,7 +5,6 @@ import ChallengeCard from './ChallengeCard'
 import {
   getDailyChallenge,
   getDayNumberForDate,
-  clearChallengeCache,
   type DailyChallenge,
 } from '@/lib/getDailyChallenge'
 
@@ -27,8 +26,7 @@ export default function DailyChallengeSection() {
   async function handleRandomize() {
     setRandomizing(true)
     setError(false)
-    clearChallengeCache()
-    const fresh = await getDailyChallenge()
+    const fresh = await getDailyChallenge(true)
     if (fresh) { setChallenge(fresh); setError(false) }
     else setError(true)
     setRandomizing(false)
@@ -38,12 +36,21 @@ export default function DailyChallengeSection() {
 
   if (error || !challenge) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center space-y-3">
-        <p className="text-sm text-gray-500">Could not load challenge. Try again later.</p>
+      <div
+        className="rounded-3xl p-6 text-center space-y-3"
+        style={{
+          background: "var(--card)",
+          border: "1px solid rgba(0,0,0,0.06)",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+        }}
+      >
+        <p className="text-sm" style={{ color: "var(--foreground)", opacity: 0.5 }}>
+          Could not load challenge. Try again later.
+        </p>
         <button
           onClick={handleRandomize}
           disabled={randomizing}
-          className="text-sm font-semibold text-[#D85A30] hover:underline disabled:opacity-50"
+          className="text-sm font-semibold text-[#D85A30] hover:underline disabled:opacity-40 transition-opacity"
         >
           {randomizing ? 'Trying…' : 'Try again'}
         </button>
@@ -63,7 +70,23 @@ export default function DailyChallengeSection() {
       <button
         onClick={handleRandomize}
         disabled={randomizing}
-        className="w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:border-[#D85A30] hover:text-[#D85A30] active:bg-orange-50 transition-colors disabled:opacity-50"
+        className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-40"
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          color: "var(--foreground)",
+          opacity: randomizing ? 0.5 : undefined,
+        }}
+        onMouseEnter={e => {
+          if (!randomizing) {
+            e.currentTarget.style.borderColor = '#D85A30'
+            e.currentTarget.style.color = '#D85A30'
+          }
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'
+          e.currentTarget.style.color = 'var(--foreground)'
+        }}
       >
         {randomizing ? 'Getting new challenge…' : '↺ Randomize Challenge'}
       </button>
@@ -73,18 +96,28 @@ export default function DailyChallengeSection() {
 
 function Skeleton() {
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden animate-pulse">
-      <div className="h-1.5 bg-gray-200" />
+    <div
+      className="rounded-3xl overflow-hidden animate-pulse"
+      style={{
+        background: "var(--card)",
+        border: "1px solid rgba(0,0,0,0.06)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+      }}
+    >
+      <div
+        className="h-[3px] w-full"
+        style={{ background: "linear-gradient(90deg, #D85A30, #f97316, #fbbf24)", opacity: 0.3 }}
+      />
       <div className="p-5 space-y-3">
-        <div className="h-3 bg-gray-100 rounded w-1/3" />
-        <div className="h-6 bg-gray-200 rounded w-2/3" />
-        <div className="h-4 bg-gray-100 rounded w-full" />
-        <div className="h-4 bg-gray-100 rounded w-4/5" />
+        <div className="h-2.5 rounded-full w-1/3" style={{ background: "var(--muted)" }} />
+        <div className="h-6 rounded-lg w-2/3" style={{ background: "var(--muted)" }} />
+        <div className="h-4 rounded-full w-full" style={{ background: "var(--locked-bg)" }} />
+        <div className="h-4 rounded-full w-4/5" style={{ background: "var(--locked-bg)" }} />
         <div className="flex gap-2 pt-1">
-          <div className="h-7 bg-orange-50 rounded-full w-20" />
-          <div className="h-7 bg-orange-50 rounded-full w-20" />
+          <div className="h-7 rounded-full w-20" style={{ background: "rgba(216,90,48,0.08)" }} />
+          <div className="h-7 rounded-full w-20" style={{ background: "rgba(216,90,48,0.08)" }} />
         </div>
-        <div className="h-11 bg-gray-200 rounded-xl mt-1" />
+        <div className="h-11 rounded-xl mt-1" style={{ background: "var(--muted)" }} />
       </div>
     </div>
   )

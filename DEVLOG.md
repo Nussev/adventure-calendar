@@ -141,3 +141,89 @@ Session ID extracted from JWT and logged alongside the call
 - Updated `ChallengeCard` to require explicit props (removed all defaults) — a missing prop is now a compile error, not a silent stale value
 - Updated `app/challenge/page.tsx` to redirect to `getDayNumberForDate()` instead of the hardcoded 8
 - **Thinking:** two components reading from different sources will diverge the moment the data changes — the fix isn't to sync them, it's to give them one source. The deterministic date hash means no DB call just to know which day it is, and the behavior is predictable: you can reason about what any date will return without running the app. Removing the hardcoded defaults from `ChallengeCard` turns a runtime inconsistency into a compile-time contract
+
+### AI-generated daily challenges — `app/api/daily-challenge/route.ts`
+- New GET endpoint that calls the Anthropic API (`claude-haiku-4-5`) to generate today's challenge
+- Accepts a `?date=YYYY-MM-DD` param — validated to only accept today's date (arbitrary date probing would bypass caching and generate unlimited API calls at cost)
+- IP rate limit: 5 Anthropic calls per IP per hour using an in-memory counter — protects against abuse on cache misses
+- Response shape: `{ title, description, difficulty, category, estimatedTime }`
+- Accepts user preference query params (`city`, `neighborhood`, `distance`, `activities`, `foods`, `times`, `budget`, `duration`) and weaves them into the prompt when present — gracefully falls back to a generic prompt if no prefs are set
+- Returns a hardcoded FALLBACK challenge on any Anthropic error rather than a 500 — the user always gets something usable
+- **Thinking:** the date guard is the most important cost control here — once the client caches today's challenge in localStorage, the server should only ever be called once per user per day. The IP rate limit catches the gap before that cache is warm. A Supabase-backed rate limit (like the generate-challenge route uses) would be more robust across serverless instances, but for a route that's only hit once a day per user, an in-memory counter is simpler and sufficient. Set a spending cap in the Anthropic console as the final backstop
+
+### Client-side getDailyChallenge utility — localStorage cache + preference passthrough
+- Rewrote `lib/getDailyChallenge.ts` as a client-side utility (uses localStorage — cannot be called server-side)
+- `getDailyChallenge()` checks `localStorage['todaysChallenge']` first; if the stored date matches today it returns immediately without a network call
+- On cache miss: reads `localStorage['adventurePreferences']`, builds query params from whatever fields are set, fetches `/api/daily-challenge`
+- Returns `DailyChallenge | null` (null = API failed, no cache) — callers own the fallback UI rather than silently receiving stale content
+- `clearChallengeCache()` exported so the profile save and randomize button can invalidate the cache when needed
+- `getDayNumberForDate()` kept as a pure export — still safe to import from server components since it never touches localStorage
+- **Thinking:** localStorage caching means the Anthropic call happens at most once per day per browser regardless of how many times the user navigates between the home page and detail page. Returning null on failure (rather than a silent fallback value) makes the error state explicit — the component decides whether to show a message, a retry button, or a placeholder, not the utility
+
+### Profile preferences → localStorage sync
+- `handleSave` in `app/profile/page.tsx` now writes to `localStorage['adventurePreferences']` alongside the Supabase upsert
+- Calls `clearChallengeCache()` after saving so the next home-page visit regenerates with the new preferences rather than serving yesterday's cached challenge
+- `loadProfile` also writes to localStorage after loading from Supabase — so preferences are available to `getDailyChallenge()` immediately on a new device session, not only after the user explicitly hits Save
+- **Thinking:** Supabase is the source of truth for preferences; localStorage is a read cache for the challenge utility. Writing to localStorage on both load and save means the utility can always read preferences without a Supabase round-trip. The cache bust on save is the critical piece — without it the user would save new preferences and still see the old challenge until midnight
+
+### DailyChallengeSection client component
+- Replaced the previous `DailyChallengeSection` with one that handles three states: loading skeleton, error ("Could not load challenge. Try again later."), and the rendered `ChallengeCard`
+- Loading state uses an `animate-pulse` skeleton that matches the card's layout — no layout shift when the challenge loads
+- Added "↺ Randomize Challenge" button: clears localStorage cache, re-fetches from the API, updates the displayed challenge in place — disabled with "Getting new challenge…" label while the request is in flight
+- **Thinking:** the randomize button is the main reason the cache has to live client-side rather than only server-side. A server-side in-memory cache would return the same challenge to every user regardless of their preferences, and there'd be no way for the client to bust it per-user. With localStorage, each user's cache is independent and the randomize button can clear it without affecting anyone else
+
+### Challenge detail page — client component, shared source
+- Converted `app/challenge/[day]/page.tsx` from a Server Component (Supabase + `getChallengeByDay`) to a `'use client'` component
+- Calls `getDailyChallenge()` in a `useEffect` — when the user navigates here from the home page the localStorage cache is already warm so it returns instantly with no extra API call
+- Removed `estimated_cost` meta tag (not in the AI challenge shape); shows `estimatedTime` + `difficulty` badge + `category` instead
+- Loading state uses a skeleton that mirrors the page layout
+- Error state shows "Could not load challenge. Try again later." with a back link
+- The `[day]` URL param is kept for display ("Day X of 30") but no longer drives which challenge is fetched — both pages always show today's challenge from the same source
+- **Thinking:** the detail page previously fetched from Supabase independently, which meant it could show a different challenge than the home page if the DB row and the AI-generated challenge diverged. Making both pages call the same `getDailyChallenge()` function removes that class of inconsistency entirely — the localStorage cache guarantees they render the same data in the same browser session
+
+### UI/UX refresh — modern, subtle, premium feel
+- Inspiration pulled from Stripe (ambient gradient glows, gradient text + buttons, bold type hierarchy), Apple Store (generous whitespace, rounded-3xl cards, clean nav), and Google Drive (clean minimal layout, soft shadows)
+- **globals.css**: replaced flat `#F9FAFB` background with warm `#FAF9F7`; added CSS custom properties (`--card`, `--accent`, `--accent-light`) so all components share one token source; added smooth scrolling, antialiasing, subtle custom scrollbar, and accessible focus rings
+- **app/page.tsx**: added ambient radial gradient blobs (fixed, pointer-events-none) for the Stripe-style background glow; gradient text on "Calendar" headline via `-webkit-background-clip`; gradient fill on the progress bar; glassmorphism bottom nav using `backdrop-filter: blur(20px)` + semi-transparent background; updated page title and description metadata
+- **ChallengeCard.tsx**: upgraded top accent from flat coral bar to a 3-color gradient stripe (coral → orange → amber); replaced flat CTA button with gradient + drop shadow; rounded corners upgraded to `rounded-3xl`; tag pills now use CSS variable colors so they adapt to dark mode
+- **CalendarGrid.tsx**: completed-day cells now use the same gradient as the accent bar instead of flat coral; today cell gets a glowing ring via `box-shadow`; all colors moved to CSS variables for dark-mode compatibility; day label opacity reduced for cleaner visual hierarchy
+- **DailyChallengeSection.tsx**: skeleton loader updated to match new rounded-3xl card shape and gradient accent; randomize button hover state wired via inline event handlers (Tailwind can't express dynamic CSS variable transitions); error state card matches new card surface styles
+- **Design philosophy:** every change was additive — no layout structure changed, no features removed. The goal was to elevate the existing design to the level of polish users expect from consumer apps: subtle depth, intentional color, and smooth transitions. The app already had the right bones (coral accent, SVG icons, clean hierarchy) — this pass adds the skin
+- **Thinking:** Stripe and Apple both use ambient gradients not as focal points but as atmosphere — they make the page feel alive without competing with the content. The key is keeping opacity low (7–12%) and blurring heavily so they read as light, not color. The glassmorphism nav is the same principle: it signals "there's content behind this" without being distracting
+
+### Nav layout fix — proper footer, all pages clickable
+- **Root cause:** home page `<main>` had `z-10` but the nav had no z-index — stacking context caused main content to sit above the nav, blocking clicks on Badges and Profile tabs
+- **Fix:** replaced `fixed bottom-0` nav with a true flex-column layout (`h-screen flex flex-col overflow-hidden`) on all three pages: outer container fills the screen, `<main>` gets `flex-1 overflow-y-auto` so only it scrolls, nav sits as a natural bottom element with `shrink-0`
+- **BottomNav component:** extracted into `components/BottomNav.tsx` — a single shared component with an `active` prop; all pages import it so the nav is defined in one place
+- **Profile save button:** moved out of `fixed bottom-0` into the flex layout between the scroll area and the nav — it behaves as a persistent bar without fighting z-index
+- **Thinking:** `fixed` positioning for navs is fragile — it relies on everything else having the right z-index and the scroll container stopping at the right point. A flex column layout is more robust: the browser handles the geometry, nothing can overlap, and it works correctly on every screen size without extra padding hacks
+
+### generate-challenge — venue-specific AI + DB-fetched preferences
+- **Problem:** the route was trusting the client to pass user preferences in the request body — a security smell (client could send fake/missing data) and a staleness risk (localStorage might lag behind what's saved in Supabase)
+- **Fix:** route now fetches the user's full profile from Supabase using the service-role client, using only the authenticated `user.id` from the JWT — client sends only `{ dayNumber }`, server owns all preference data
+- **Migration 010:** added `preferred_venue_types text[]` to `profiles` and `venue_type text` to `challenges` — lets users express what kinds of places they want (restaurants, bars, museums, parks, etc.) and lets us store + filter by that later
+- **Prompt upgrade:** new prompt tells Claude it is "a hyper-local adventure guide with deep knowledge of {city}" and instructs it to name a REAL, specific venue — not a generic description. Added explicit rule: if Claude isn't certain of an exact address, give the neighbourhood rather than fabricate one. Added `venue_type` to the returned JSON so we know what kind of place was suggested
+- **Profile page:** added "Venue types" multi-select section with 12 options (Restaurants, Bars, Coffee shops, Museums, Art galleries, Parks, Live music venues, Markets, Fitness studios, Theatres, Bookshops, Hidden gems). Saves to `preferred_venue_types` in Supabase and localStorage. Reads back from both on load
+- **Thinking:** moving preference ownership to the server is the right call — the client is a display layer, not a data layer. The venue-type preference is the key unlock for making challenges feel personal: "suggest a place near me" is generic, "suggest a jazz bar in Williamsburg" is something you'd actually go to
+
+---
+
+## April 21 2026
+
+### Schema reconciliation — migration 012
+- Added `profiles.updated_at` with auto-update trigger
+- Added `profiles.availability text` (single-value `'weekdays'|'weekends'|'both'`) alongside the existing `available_times text[]` (multi-select)
+- Added `challenges.challenge_date date` with partial unique index `(user_id, challenge_date)` — supports real-calendar-date keyed challenges vs. the existing 1–30 `day_number` scheme
+- Added `challenges.is_completed boolean` and `challenges.completed_at timestamptz` directly on the row — completion no longer requires joining `user_progress` for basic reads
+- Added `challenges.estimated_time text` alongside `estimated_duration` (both names appear in different parts of the codebase)
+- Added `user_badges.badge_type text` with backfill from `badges.slug` — lets callers filter without a join
+- **Thinking:** additive migration only — no renames, no drops. Existing `onConflict: 'user_id,day_number'` calls still work; the new date index is a separate partial index
+
+### localStorage → Supabase for challenges + preferences
+- **Problem:** challenge caching and preference reads were split across localStorage (client) and Supabase (server) — stale prefs, cross-device data loss, and two diverging sources of truth
+- **`lib/getDailyChallenge.ts`:** rewrote as a thin client that POSTs to `/api/generate-challenge` with `{ challengeDate, force }`. No more localStorage reads or writes. `clearChallengeCache()` is kept as a no-op export so call-sites compile without changes
+- **`/api/generate-challenge`:** now accepts `{ challengeDate: string, force?: boolean }` in addition to legacy `{ dayNumber }`. Before calling Anthropic, checks the `challenges` table for `(user_id, challenge_date)` — if a row exists and `force` is false, returns it immediately (zero Anthropic cost). Rate limiting is now only charged when Anthropic is actually called. Saves `challenge_date` alongside `day_number`. Uses insert-or-update instead of upsert to avoid partial-index conflicts
+- **`/api/complete-challenge`:** also updates `challenges.is_completed = true` and `challenges.completed_at` on the row directly, in addition to the existing `user_progress` upsert. Extracted shared `completedAt` timestamp so both tables are always in sync
+- **`app/profile/page.tsx`:** removed both `localStorage.setItem('adventurePreferences', ...)` calls (load-sync and save-sync). Supabase is the only store; the generate-challenge route fetches preferences server-side on every generation
+- **`components/DailyChallengeSection.tsx`:** randomize button now calls `getDailyChallenge(true)` directly instead of `clearChallengeCache()` + `getDailyChallenge()`. `force=true` is forwarded through to the API so the server regenerates even when a DB row exists
+- **Thinking:** the key insight is that the "cache" should live in the DB, not localStorage. localStorage is invisible to other devices and disappears on browser clear. A `challenges` row keyed to `(user_id, challenge_date)` gives the same "generate once per day" guarantee but persists across devices and sessions. The `force` flag threads through all layers — client → getDailyChallenge → API → DB — so randomize still works without a separate cache-clear mechanism

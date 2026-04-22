@@ -22,7 +22,6 @@ export default function CalendarGrid({
 
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth()
 
-  // Build set of completed date strings (working backwards from today)
   const completedDates = new Set<string>()
   for (let i = 0; i < completedDays; i++) {
     const d = new Date(today)
@@ -46,10 +45,20 @@ export default function CalendarGrid({
   const todayLabel = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: "var(--card)",
+        border: "1px solid var(--border)",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04)",
+      }}
+    >
       {isCurrentMonth && (
-        <p className="text-xs text-gray-400 font-medium mb-3">
-          Today is <span className="text-gray-600 font-semibold">{todayLabel}</span>
+        <p className="text-[11px] font-medium mb-3" style={{ color: "var(--foreground)", opacity: 0.4 }}>
+          Today is{" "}
+          <span className="font-semibold" style={{ opacity: 1, color: "var(--foreground)" }}>
+            {todayLabel}
+          </span>
         </p>
       )}
 
@@ -57,16 +66,22 @@ export default function CalendarGrid({
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={prevMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-lg leading-none"
+          style={{ color: "var(--foreground)", opacity: 0.35 }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '0.35')}
         >
           ‹
         </button>
-        <span className="text-sm font-bold text-gray-900">
+        <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>
           {MONTH_NAMES[viewMonth]} {viewYear}
         </span>
         <button
           onClick={nextMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-lg leading-none"
+          style={{ color: "var(--foreground)", opacity: 0.35 }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '0.35')}
         >
           ›
         </button>
@@ -75,14 +90,18 @@ export default function CalendarGrid({
       {/* Day labels */}
       <div className="grid grid-cols-7 mb-1">
         {DAY_LABELS.map(d => (
-          <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-1">
+          <div
+            key={d}
+            className="text-center text-[9px] font-semibold py-1 uppercase tracking-[0.1em]"
+            style={{ color: "var(--foreground)", opacity: 0.3 }}
+          >
             {d}
           </div>
         ))}
       </div>
 
       {/* Day grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-[3px]">
         {Array.from({ length: firstDay }, (_, i) => (
           <div key={`empty-${i}`} />
         ))}
@@ -96,21 +115,30 @@ export default function CalendarGrid({
           return (
             <div
               key={dayNum}
-              className={[
-                'aspect-square flex flex-col items-center justify-center rounded-lg text-xs font-bold select-none',
+              className="aspect-square flex flex-col items-center justify-center rounded-lg text-xs font-bold select-none transition-transform"
+              style={
                 isDone
-                  ? 'bg-[#D85A30] text-white shadow-sm'
+                  ? {
+                      background: "linear-gradient(135deg, #D85A30 0%, #f97316 100%)",
+                      color: "#fff",
+                      boxShadow: "0 2px 6px rgba(216,90,48,0.25)",
+                    }
                   : isToday
-                  ? 'border-2 border-[#D85A30] text-[#D85A30] bg-orange-50 ring-2 ring-[#D85A30]/20'
+                  ? {
+                      border: "2px solid #D85A30",
+                      color: "#D85A30",
+                      background: "var(--accent-light)",
+                      boxShadow: "0 0 0 3px rgba(216,90,48,0.12)",
+                    }
                   : isFuture
-                  ? 'text-gray-300'
-                  : 'text-gray-400',
-              ].join(' ')}
+                  ? { color: "var(--foreground)", opacity: 0.18 }
+                  : { color: "var(--foreground)", opacity: 0.35 }
+              }
             >
               {isDone ? (
                 <>
-                  <span className="text-[9px] leading-none opacity-70">{dayNum}</span>
-                  <span className="text-sm leading-none">✓</span>
+                  <span className="text-[8px] leading-none opacity-75">{dayNum}</span>
+                  <span className="text-[12px] leading-none mt-px">✓</span>
                 </>
               ) : (
                 <span>{dayNum}</span>

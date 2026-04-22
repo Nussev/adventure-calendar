@@ -1,10 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Browser / Server Component client (anon key, respects RLS)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Browser client — uses @supabase/ssr so the session is stored in cookies
+// instead of localStorage. This means server-side route handlers can read
+// the session automatically via createSupabaseServerClient().
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
 // ── Types ────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import CalendarGrid from "@/components/CalendarGrid";
 import DailyChallengeSection from "@/components/DailyChallengeSection";
-import Link from "next/link";
+import { BottomNav } from "@/components/BottomNav";
 import { getDayNumberForDate } from "@/lib/getDailyChallenge";
 
 const STREAK = 7;
@@ -11,59 +11,121 @@ export default async function Home() {
   const progressPct = Math.round((STREAK / TOTAL_DAYS) * 100);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <main className="flex-1 overflow-y-auto pb-24">
-        <div className="max-w-md mx-auto px-4">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--background)" }}>
+
+      {/* Decorative ambient gradient blobs — pointer-events-none so they never intercept clicks */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div
+          className="absolute -top-32 -right-32 w-[420px] h-[420px] rounded-full"
+          style={{
+            background: "radial-gradient(circle, #D85A30 0%, #f97316 60%, transparent 100%)",
+            filter: "blur(60px)",
+            opacity: 0.1,
+          }}
+        />
+        <div
+          className="absolute top-[55%] -left-24 w-[300px] h-[300px] rounded-full"
+          style={{
+            background: "radial-gradient(circle, #f97316 0%, transparent 70%)",
+            filter: "blur(50px)",
+            opacity: 0.06,
+          }}
+        />
+      </div>
+
+      {/* Scrollable content — flex-1 means it fills everything above the nav */}
+      <main className="relative z-10 flex-1 overflow-y-auto">
+        <div className="max-w-md mx-auto px-4 pb-6">
 
           {/* ── Hero ── */}
-          <section className="pt-10 pb-6">
-            <h1 className="text-4xl font-black tracking-tight text-gray-900 leading-none">
+          <section className="pt-12 pb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D85A30] mb-2">
+              Daily Adventure
+            </p>
+            <h1
+              className="text-[2.75rem] font-black tracking-tight leading-[1.05]"
+              style={{ color: "var(--foreground)" }}
+            >
               Adventure<br />
-              <span className="text-[#D85A30]">Calendar</span>
+              <span
+                style={{
+                  background: "linear-gradient(135deg, #D85A30 0%, #f97316 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
+                Calendar
+              </span>
             </h1>
-            <p className="mt-2 text-base text-gray-500 font-medium">
+            <p className="mt-2.5 text-[0.925rem] font-medium" style={{ color: "var(--foreground)", opacity: 0.45 }}>
               One spontaneous challenge, every day.
             </p>
 
-            {/* Streak + Progress */}
-            <div className="mt-5 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-3">
+            {/* Streak + Progress Card */}
+            <div
+              className="mt-5 rounded-2xl p-4 border"
+              style={{
+                background: "var(--card)",
+                borderColor: "var(--border)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div className="flex items-center justify-between mb-3.5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: "var(--accent-light)" }}
+                  >
                     <FlameIcon className="w-5 h-5 text-[#D85A30]" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--foreground)", opacity: 0.4 }}>
                       Current Streak
                     </p>
-                    <p className="text-2xl font-black text-gray-900 leading-none">
+                    <p className="text-2xl font-black leading-none" style={{ color: "var(--foreground)" }}>
                       {STREAK}{" "}
-                      <span className="text-base font-semibold text-gray-500">
-                        days
-                      </span>
+                      <span className="text-sm font-semibold" style={{ opacity: 0.4 }}>days</span>
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--foreground)", opacity: 0.4 }}>
                     Progress
                   </p>
-                  <p className="text-2xl font-black text-[#D85A30] leading-none">
+                  <p
+                    className="text-2xl font-black leading-none"
+                    style={{
+                      background: "linear-gradient(135deg, #D85A30, #f97316)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      backgroundClip: "text",
+                    }}
+                  >
                     {STREAK}
-                    <span className="text-base font-semibold text-gray-400">
+                    <span
+                      className="text-sm font-semibold"
+                      style={{ WebkitTextFillColor: "var(--foreground)", opacity: 0.35 }}
+                    >
                       /{TOTAL_DAYS}
                     </span>
                   </p>
                 </div>
               </div>
 
-              <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="w-full rounded-full h-2 overflow-hidden"
+                style={{ background: "var(--muted)" }}
+              >
                 <div
-                  className="h-2.5 rounded-full bg-[#D85A30] transition-all"
-                  style={{ width: `${progressPct}%` }}
+                  className="h-2 rounded-full transition-all duration-700"
+                  style={{
+                    width: `${progressPct}%`,
+                    background: "linear-gradient(90deg, #D85A30 0%, #f97316 100%)",
+                  }}
                 />
               </div>
-              <p className="mt-1.5 text-right text-xs text-gray-400">
+              <p className="mt-1.5 text-right text-[11px] font-medium" style={{ color: "var(--foreground)", opacity: 0.35 }}>
                 {TOTAL_DAYS - STREAK} days to go
               </p>
             </div>
@@ -71,66 +133,30 @@ export default async function Home() {
 
           {/* ── Calendar Grid ── */}
           <section className="mb-6">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">
-              Your Journey
-            </h2>
-            <CalendarGrid
-              totalDays={TOTAL_DAYS}
-              completedDays={STREAK}
-              activeDay={STREAK + 1}
-            />
+            <SectionLabel>Your Journey</SectionLabel>
+            <CalendarGrid totalDays={TOTAL_DAYS} completedDays={STREAK} activeDay={STREAK + 1} />
           </section>
 
           {/* ── Today's Challenge ── */}
           <section className="mb-6">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">
-              Day {todayDayNumber}
-            </h2>
+            <SectionLabel>Day {todayDayNumber}</SectionLabel>
             <DailyChallengeSection />
           </section>
+
         </div>
       </main>
 
-      {/* ── Bottom Nav ── */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg">
-        <div className="max-w-md mx-auto flex">
-          <NavItem href="/" label="Home" active>
-            <HomeIcon />
-          </NavItem>
-          <NavItem href="/badges" label="Badges">
-            <BadgeIcon />
-          </NavItem>
-          <NavItem href="/profile" label="Profile">
-            <ProfileIcon />
-          </NavItem>
-        </div>
-      </nav>
+      {/* ── Bottom Nav — sits naturally at the bottom, no fixed positioning needed ── */}
+      <BottomNav active="home" />
     </div>
   );
 }
 
-function NavItem({
-  href,
-  label,
-  active = false,
-  children,
-}: {
-  href: string;
-  label: string;
-  active?: boolean;
-  children: React.ReactNode;
-}) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Link
-      href={href}
-      className={[
-        "flex-1 flex flex-col items-center justify-center py-3 gap-1 text-xs font-semibold transition-colors",
-        active ? "text-[#D85A30]" : "text-gray-400 hover:text-gray-600",
-      ].join(" ")}
-    >
-      <span className="w-6 h-6">{children}</span>
-      <span>{label}</span>
-    </Link>
+    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-3" style={{ color: "var(--foreground)", opacity: 0.4 }}>
+      {children}
+    </p>
   );
 }
 
@@ -138,34 +164,6 @@ function FlameIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C12 2 7 8 7 13a5 5 0 0010 0c0-5-5-11-5-11zm0 16a3 3 0 01-3-3c0-2.5 2-5.5 3-7.5 1 2 3 5 3 7.5a3 3 0 01-3 3z" />
-    </svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12L12 3l9 9" />
-      <path d="M9 21V12h6v9" />
-      <path d="M3 12v9h18V12" />
-    </svg>
-  );
-}
-
-function BadgeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="8" r="6" />
-      <path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72m2.54-15.38c-3.72 4.35-8.94 5.66-16.88 5.85m19.5 1.9c-3.5-.93-6.63-.82-8.94 0-2.58.92-5.01 2.86-7.44 6.32" />
-    </svg>
-  );
-}
-
-function ProfileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
     </svg>
   );
 }

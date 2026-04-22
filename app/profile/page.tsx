@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { clearChallengeCache } from '@/lib/getDailyChallenge'
+import { BottomNav } from '@/components/BottomNav'
 
 const ACTIVITIES: string[] = [
   'Outdoors', 'Art & culture', 'Food & drink', 'Music',
@@ -13,6 +13,22 @@ const ACTIVITIES: string[] = [
 const FOODS: string[] = [
   'Street food', 'Fine dining', 'Coffee shops', 'Vegan / veg',
   'Brunch spots', 'Ethnic cuisines', 'Cocktail bars', 'Hidden gems'
+]
+
+// Venue types — these map directly to what we ask Claude to suggest
+const VENUE_TYPES: { label: string; emoji: string }[] = [
+  { label: 'Restaurants',        emoji: '🍽️' },
+  { label: 'Bars',               emoji: '🍸' },
+  { label: 'Coffee shops',       emoji: '☕' },
+  { label: 'Museums',            emoji: '🏛️' },
+  { label: 'Art galleries',      emoji: '🎨' },
+  { label: 'Parks',              emoji: '🌿' },
+  { label: 'Live music venues',  emoji: '🎵' },
+  { label: 'Markets',            emoji: '🛍️' },
+  { label: 'Fitness studios',    emoji: '💪' },
+  { label: 'Theatres',           emoji: '🎭' },
+  { label: 'Bookshops',          emoji: '📚' },
+  { label: 'Hidden gems',        emoji: '💎' },
 ]
 
 const TIMES: { label: string; sub: string }[] = [
@@ -27,15 +43,16 @@ const DURATIONS: string[] = ['30 minutes', '1 hour', '2 hours', 'Half day', 'No 
 const DISTANCES: string[] = ['Within 0.5 miles', 'Within 1 mile', 'Within 3 miles', 'Anywhere in the city']
 
 interface FormState {
-  full_name: string
+  full_name:   string
   neighborhood: string
-  city: string
-  distance: string
-  activities: string[]
-  foods: string[]
-  times: string[]
-  budget: string
-  duration: string
+  city:         string
+  distance:     string
+  activities:   string[]
+  foods:        string[]
+  venue_types:  string[]
+  times:        string[]
+  budget:       string
+  duration:     string
 }
 
 interface NeighborhoodSuggestion {
@@ -54,15 +71,16 @@ export default function ProfilePage() {
   const [loadingSuggestions, setLoadingSuggestions] = useState<boolean>(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>({
-    full_name: '',
+    full_name:   '',
     neighborhood: '',
-    city: '',
-    distance: 'Within 1 mile',
-    activities: [],
-    foods: [],
-    times: [],
-    budget: 'Under $25',
-    duration: '2 hours',
+    city:         '',
+    distance:     'Within 1 mile',
+    activities:   [],
+    foods:        [],
+    venue_types:  [],
+    times:        [],
+    budget:       'Under $25',
+    duration:     '2 hours',
   })
 
   useEffect(() => {
@@ -90,23 +108,18 @@ export default function ProfilePage() {
 
       if (profile) {
         const prefs = {
-          full_name: profile.full_name || '',
+          full_name:    profile.full_name || '',
           neighborhood: profile.neighborhood || '',
-          city: profile.city || '',
-          distance: profile.max_distance || 'Within 1 mile',
-          activities: profile.preferred_activities || [],
-          foods: profile.preferred_foods || [],
-          times: profile.available_times || [],
-          budget: profile.budget || 'Under $25',
-          duration: profile.max_duration || '2 hours',
+          city:         profile.city || '',
+          distance:     profile.max_distance || 'Within 1 mile',
+          activities:   profile.preferred_activities || [],
+          foods:        profile.preferred_foods || [],
+          venue_types:  profile.preferred_venue_types || [],
+          times:        profile.available_times || [],
+          budget:       profile.budget || 'Under $25',
+          duration:     profile.max_duration || '2 hours',
         }
         setForm(prefs)
-        // Keep localStorage in sync so getDailyChallenge can read prefs
-        // even before the user explicitly hits Save.
-        try {
-          const { full_name: _, ...adventurePrefs } = prefs
-          localStorage.setItem('adventurePreferences', JSON.stringify(adventurePrefs))
-        } catch {}
       }
     } catch (err) {
       console.error('Error loading profile:', err)
@@ -170,37 +183,20 @@ export default function ProfilePage() {
       const { error } = await supabase
         .from('profiles')
         .upsert({
-          id: user.id,
-          full_name: form.full_name,
-          neighborhood: form.neighborhood,
-          city: form.city,
-          max_distance: form.distance,
-          preferred_activities: form.activities,
-          preferred_foods: form.foods,
-          available_times: form.times,
-          budget: form.budget,
-          max_duration: form.duration,
-          onboarding_completed: true,
+          id:                    user.id,
+          full_name:             form.full_name,
+          neighborhood:          form.neighborhood,
+          city:                  form.city,
+          max_distance:          form.distance,
+          preferred_activities:  form.activities,
+          preferred_foods:       form.foods,
+          preferred_venue_types: form.venue_types,
+          available_times:       form.times,
+          budget:                form.budget,
+          max_duration:          form.duration,
+          onboarding_completed:  true,
         })
       if (error) throw error
-
-      // Persist preferences locally so getDailyChallenge can read them
-      // without requiring a Supabase round-trip on every page load.
-      try {
-        localStorage.setItem('adventurePreferences', JSON.stringify({
-          city: form.city,
-          neighborhood: form.neighborhood,
-          distance: form.distance,
-          activities: form.activities,
-          foods: form.foods,
-          times: form.times,
-          budget: form.budget,
-          duration: form.duration,
-        }))
-        // Invalidate today's cached challenge so the next home-page visit
-        // generates a fresh one with the updated preferences.
-        clearChallengeCache()
-      } catch {}
 
       setSaved(true)
       setTimeout(() => router.push('/'), 800)
@@ -219,13 +215,13 @@ export default function ProfilePage() {
 
   if (authError) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white px-6 text-center">
+      <div className="h-screen flex flex-col items-center justify-center px-6 text-center" style={{ background: "var(--background)" }}>
         <p className="text-sm font-medium text-red-500 mb-2">Sign-in failed</p>
-        <p className="text-sm text-stone-500 mb-6">{authError}</p>
+        <p className="text-sm mb-6" style={{ color: "var(--foreground)", opacity: 0.5 }}>{authError}</p>
         <button
           onClick={() => router.push('/login')}
           className="px-6 py-2.5 rounded-xl text-sm font-medium text-white"
-          style={{ background: '#D85A30' }}
+          style={{ background: 'linear-gradient(135deg, #D85A30, #f97316)' }}
         >
           Back to login
         </button>
@@ -235,25 +231,29 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="text-sm text-stone-400">Loading profile...</div>
+      <div className="h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
+        <div className="text-sm" style={{ color: "var(--foreground)", opacity: 0.4 }}>Loading profile...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col pb-24">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--background)" }}>
 
       {/* Header */}
-      <div className="px-5 pt-10 pb-6 bg-stone-50 border-b border-stone-200">
-        <p className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-1">Your profile</p>
-        <h1 className="text-2xl font-medium text-stone-900">Preferences</h1>
-        <p className="text-sm text-stone-500 mt-1">
+      <div
+        className="shrink-0 px-5 pt-10 pb-5 border-b"
+        style={{ background: "var(--card)", borderColor: "rgba(0,0,0,0.06)" }}
+      >
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#D85A30] mb-1">Your profile</p>
+        <h1 className="text-2xl font-black" style={{ color: "var(--foreground)" }}>Preferences</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--foreground)", opacity: 0.45 }}>
           The more you fill in, the better your daily challenges get.
         </p>
       </div>
 
-      <div className="flex-1 px-5 py-6 space-y-8">
+      {/* Scrollable form content */}
+      <div className="flex-1 overflow-y-auto px-5 py-6 space-y-8">
 
         {/* Personal */}
         <section>
@@ -402,6 +402,30 @@ export default function ProfilePage() {
           </div>
         </section>
 
+        {/* Venue types */}
+        <section>
+          <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-1">Venue types</h2>
+          <p className="text-xs text-stone-400 mb-3">
+            Challenges will be tailored to these kinds of places.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {VENUE_TYPES.map(({ label, emoji }) => (
+              <button
+                key={label}
+                onClick={() => toggleItem('venue_types', label)}
+                className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  form.venue_types.includes(label)
+                    ? 'bg-orange-50 border-orange-400 text-orange-800'
+                    : 'border-stone-200 text-stone-600 hover:border-stone-300'
+                }`}
+              >
+                <span>{emoji}</span>
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         {/* Availability */}
         <section>
           <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Availability</h2>
@@ -470,17 +494,22 @@ export default function ProfilePage() {
         </section>
       </div>
 
-      {/* Sticky save button */}
-      <div className="fixed bottom-0 left-0 right-0 px-5 py-4 bg-white border-t border-stone-200">
+      {/* Save button — inside the scroll area, at the bottom of the form */}
+      <div className="px-5 pb-2">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full py-3 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-all"
-          style={{ background: '#D85A30' }}
+          className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all active:scale-[0.98]"
+          style={{
+            background: 'linear-gradient(135deg, #D85A30 0%, #e8693e 100%)',
+            boxShadow: '0 4px 14px rgba(216,90,48,0.3)',
+          }}
         >
           {saving ? 'Saving...' : saved ? 'Saved!' : 'Save preferences'}
         </button>
       </div>
+
+      <BottomNav active="profile" />
     </div>
   )
 }
