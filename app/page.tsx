@@ -2,18 +2,54 @@ import CalendarGrid from "@/components/CalendarGrid";
 import DailyChallengeSection from "@/components/DailyChallengeSection";
 import { BottomNav } from "@/components/BottomNav";
 import { getDayNumberForDate } from "@/lib/getDailyChallenge";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-const STREAK = 7;
 const TOTAL_DAYS = 30;
 
 export default async function Home() {
   const todayDayNumber = getDayNumberForDate();
-  const progressPct = Math.round((STREAK / TOTAL_DAYS) * 100);
+
+  // Fetch real completed challenge dates — graceful if unauthenticated
+  let completedDates: string[] = []
+  let streak = 0
+
+  try {
+    const supabase = await createSupabaseServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (user) {
+      const { data: challenges } = await supabase
+        .from('challenges')
+        .select('challenge_date')
+        .eq('user_id', user.id)
+        .eq('is_completed', true)
+
+      if (challenges) {
+        completedDates = challenges
+          .map(c => c.challenge_date as string)
+          .filter(Boolean)
+
+        const completedSet = new Set(completedDates)
+
+        // Walk backwards from today to compute streak
+        const cursor = new Date()
+        while (completedSet.has(cursor.toISOString().split('T')[0])) {
+          streak++
+          cursor.setDate(cursor.getDate() - 1)
+        }
+      }
+    }
+  } catch {
+    // Show empty calendar rather than crash
+  }
+
+  const completedCount = completedDates.length
+  const progressPct    = Math.round((completedCount / TOTAL_DAYS) * 100)
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--background)" }}>
 
-      {/* Decorative ambient gradient blobs — pointer-events-none so they never intercept clicks */}
+      {/* Decorative ambient gradient blobs */}
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div
           className="absolute -top-32 -right-32 w-[420px] h-[420px] rounded-full"
@@ -33,7 +69,6 @@ export default async function Home() {
         />
       </div>
 
-      {/* Scrollable content — flex-1 means it fills everything above the nav */}
       <main className="relative z-10 flex-1 overflow-y-auto">
         <div className="max-w-md mx-auto px-4 pb-6">
 
@@ -62,7 +97,7 @@ export default async function Home() {
               One spontaneous challenge, every day.
             </p>
 
-            {/* Streak + Progress Card */}
+            {/* Streak + Progress */}
             <div
               className="mt-5 rounded-2xl p-4 border"
               style={{
@@ -84,7 +119,7 @@ export default async function Home() {
                       Current Streak
                     </p>
                     <p className="text-2xl font-black leading-none" style={{ color: "var(--foreground)" }}>
-                      {STREAK}{" "}
+                      {streak}{" "}
                       <span className="text-sm font-semibold" style={{ opacity: 0.4 }}>days</span>
                     </p>
                   </div>
@@ -102,7 +137,7 @@ export default async function Home() {
                       backgroundClip: "text",
                     }}
                   >
-                    {STREAK}
+                    {completedCount}
                     <span
                       className="text-sm font-semibold"
                       style={{ WebkitTextFillColor: "var(--foreground)", opacity: 0.35 }}
@@ -126,7 +161,7 @@ export default async function Home() {
                 />
               </div>
               <p className="mt-1.5 text-right text-[11px] font-medium" style={{ color: "var(--foreground)", opacity: 0.35 }}>
-                {TOTAL_DAYS - STREAK} days to go
+                {TOTAL_DAYS - completedCount} days to go
               </p>
             </div>
           </section>
@@ -134,7 +169,7 @@ export default async function Home() {
           {/* ── Calendar Grid ── */}
           <section className="mb-6">
             <SectionLabel>Your Journey</SectionLabel>
-            <CalendarGrid totalDays={TOTAL_DAYS} completedDays={STREAK} activeDay={STREAK + 1} />
+            <CalendarGrid completedDates={completedDates} todayDayNumber={todayDayNumber} />
           </section>
 
           {/* ── Today's Challenge ── */}
@@ -146,7 +181,6 @@ export default async function Home() {
         </div>
       </main>
 
-      {/* ── Bottom Nav — sits naturally at the bottom, no fixed positioning needed ── */}
       <BottomNav active="home" />
     </div>
   );

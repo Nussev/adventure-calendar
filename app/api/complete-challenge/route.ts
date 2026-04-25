@@ -1,5 +1,14 @@
 import { NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServerClient()
@@ -23,15 +32,19 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'challengeId and dayNumber are required' }, { status: 400 })
   }
 
+  const serviceClient = getServiceClient()
+
   try {
     const completedAt = new Date().toISOString()
 
-    // ── Mark complete in challenges table ────────────────────
-    await supabase
+    // ── Mark complete in challenges table (service role — no RLS gap) ──
+    const { error: challengeUpdateError } = await serviceClient
       .from('challenges')
       .update({ is_completed: true, completed_at: completedAt })
       .eq('id', challengeId)
       .eq('user_id', user.id)
+
+    if (challengeUpdateError) throw new Error(`Failed to mark challenge complete: ${challengeUpdateError.message}`)
 
     // ── Mirror to user_progress for streak + badge logic ────
     const { data: progress, error: progressError } = await supabase

@@ -25,6 +25,7 @@ export interface DailyChallenge {
   estimated_cost?:    string
   time_of_day?:       string
   venue_stops?:       VenueStop[]
+  is_completed?:      boolean
 }
 
 export function getDayNumberForDate(date: Date = new Date()): number {
@@ -67,6 +68,7 @@ export async function getDailyChallenge(force = false): Promise<DailyChallenge |
       estimated_cost:     c.estimated_cost as string | undefined,
       time_of_day:        c.time_of_day as string | undefined,
       venue_stops:        c.venue_stops as VenueStop[] | undefined,
+      is_completed:       c.is_completed as boolean | undefined,
     }
   } catch {
     return null

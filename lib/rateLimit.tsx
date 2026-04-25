@@ -75,6 +75,39 @@ export async function recordAiGeneration(userId: string, endpoint = 'generate-ch
 }
 
 /**
+ * Count-based rate limit using api_call_log — works per endpoint,
+ * independent of the profiles.last_ai_generated 24h bucket.
+ *
+ * @param userId
+ * @param endpoint       - matches the `endpoint` column in api_call_log
+ * @param maxPerWindow   - max calls allowed in the window
+ * @param windowMs       - rolling window length in milliseconds
+ */
+export async function checkCallLogLimit(
+  userId: string,
+  endpoint: string,
+  maxPerWindow: number,
+  windowMs: number
+): Promise<{ allowed: boolean; retryAfterMs: number | null }> {
+  const supabase = getServerClient()
+  const since = new Date(Date.now() - windowMs).toISOString()
+
+  const { count, error } = await supabase
+    .from('api_call_log')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('endpoint', endpoint)
+    .gte('called_at', since)
+
+  if (error) throw new Error(`checkCallLogLimit: ${error.message}`)
+
+  if ((count ?? 0) >= maxPerWindow) {
+    return { allowed: false, retryAfterMs: windowMs }
+  }
+  return { allowed: true, retryAfterMs: null }
+}
+
+/**
  * Build a standard 429 Response with a Retry-After header.
  *
  * @param {number} retryAfterMs

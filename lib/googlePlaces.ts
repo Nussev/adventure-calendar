@@ -129,23 +129,25 @@ export async function searchVenuesByType(
 
 /**
  * Fetch venues for multiple types in parallel, then return a flat list
- * deduped by name, sorted by rating descending.
+ * deduped by name, sorted by rating descending (or shuffled when randomize=true).
  *
  * @param venueTypes  - array of venue type labels from the user's preferences
  * @param city        - user's city
  * @param neighborhood - user's neighbourhood
  * @param perType     - max results per venue type query
+ * @param randomize   - shuffle results instead of sorting by rating
  */
 export async function searchVenuesForChallenge(
   venueTypes: string[],
   city: string,
   neighborhood: string,
-  perType = 5
+  perType = 5,
+  randomize = false
 ): Promise<PlaceResult[]> {
   if (!venueTypes.length) return []
 
-  // Run all type searches in parallel — max 3 types to keep latency down
-  const typesToSearch = venueTypes.slice(0, 3)
+  // Run all type searches in parallel — max 4 types to keep latency down
+  const typesToSearch = venueTypes.slice(0, 4)
 
   const results = await Promise.all(
     typesToSearch.map(t => searchVenuesByType(t, city, neighborhood, perType))
@@ -162,7 +164,15 @@ export async function searchVenuesForChallenge(
     return true
   })
 
-  // Sort by rating descending, nulls last
+  if (randomize) {
+    // Fisher-Yates shuffle so re-rolls surface different venues
+    for (let i = deduped.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+    }
+    return deduped
+  }
+
   return deduped.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
 }
 
@@ -172,7 +182,7 @@ export async function searchVenuesForChallenge(
  */
 export function formatVenuesForPrompt(
   venues: PlaceResult[],
-  venueType: string
+  _venueType: string
 ): string {
   if (!venues.length) return ''
 

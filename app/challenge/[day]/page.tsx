@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { getDailyChallenge, type DailyChallenge, type VenueStop } from '@/lib/getDailyChallenge'
 
@@ -14,18 +14,43 @@ const difficultyConfig = {
 export default function ChallengePage() {
   const { day } = useParams<{ day: string }>()
   const dayNumber = parseInt(day, 10)
+  const router = useRouter()
 
-  const [challenge, setChallenge] = useState<DailyChallenge | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState(false)
+  const [challenge, setChallenge]     = useState<DailyChallenge | null>(null)
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(false)
+  const [completing, setCompleting]   = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
 
   useEffect(() => {
     getDailyChallenge().then(c => {
-      if (c) setChallenge(c)
-      else setError(true)
+      if (c) {
+        setChallenge(c)
+        setIsCompleted(c.is_completed ?? false)
+      } else {
+        setError(true)
+      }
       setLoading(false)
     })
   }, [])
+
+  async function handleComplete() {
+    if (!challenge?.id || completing || isCompleted) return
+    setCompleting(true)
+    try {
+      const res = await fetch('/api/complete-challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId: challenge.id, dayNumber }),
+      })
+      if (res.ok) {
+        setIsCompleted(true)
+        setTimeout(() => router.push('/'), 1200)
+      }
+    } finally {
+      setCompleting(false)
+    }
+  }
 
   if (loading) return <LoadingSkeleton dayNumber={dayNumber} />
 
@@ -153,13 +178,19 @@ export default function ChallengePage() {
 
         {/* CTA */}
         <button
-          className="w-full text-white font-bold py-4 rounded-2xl text-base tracking-wide transition-all active:scale-[0.98]"
+          onClick={handleComplete}
+          disabled={completing || isCompleted}
+          className="w-full text-white font-bold py-4 rounded-2xl text-base tracking-wide transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-default"
           style={{
-            background: "linear-gradient(135deg, #D85A30 0%, #e8693e 100%)",
-            boxShadow: "0 4px 16px rgba(216,90,48,0.35)",
+            background: isCompleted
+              ? "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)"
+              : "linear-gradient(135deg, #D85A30 0%, #e8693e 100%)",
+            boxShadow: isCompleted
+              ? "0 4px 16px rgba(22,163,74,0.3)"
+              : "0 4px 16px rgba(216,90,48,0.35)",
           }}
         >
-          Mark as Complete
+          {isCompleted ? '✓ Completed!' : completing ? 'Saving…' : 'Mark as Complete'}
         </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--foreground)", opacity: 0.35 }}>

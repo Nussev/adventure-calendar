@@ -64,10 +64,12 @@ alter table profiles      enable row level security;
 alter table challenges    enable row level security;
 alter table user_progress enable row level security;
 
--- Challenges are public read
-create policy "challenges: public read"
+-- Pre-seeded challenges (user_id IS NULL) are public.
+-- User-generated AI challenges are only visible to their owner.
+-- NOTE: this was initially `using (true)` — corrected in migration 013.
+create policy "challenges: scoped read"
   on challenges for select
-  using (true);
+  using (user_id is null or auth.uid() = user_id);
 
 -- Profiles: users can only read/update their own
 create policy "profiles: own read"

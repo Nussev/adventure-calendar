@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { checkCallLogLimit, recordAiGeneration, tooManyRequestsResponse } from '@/lib/rateLimit'
 
 const client = new Anthropic()
 
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest) {
   if (authError || !user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // ── Rate limit — 5 calls per hour per user ─────────────────
+  const { allowed, retryAfterMs } = await checkCallLogLimit(
+    user.id, 'neighborhood-suggestions', 5, 60 * 60 * 1000
+  )
+  if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
 
   // ── Parse + sanitize ───────────────────────────────────────
   let body: { city: string; activities: string[]; foods: string[]; budget: string }
@@ -63,6 +70,8 @@ Respond ONLY with a valid JSON array, no markdown:
 
     const raw = (message.content[0] as { type: string; text: string }).text.trim()
     const suggestions: NeighborhoodSuggestion[] = JSON.parse(raw.replace(/```json|```/g, '').trim())
+
+    await recordAiGeneration(user.id, 'neighborhood-suggestions')
 
     return Response.json({ suggestions })
 

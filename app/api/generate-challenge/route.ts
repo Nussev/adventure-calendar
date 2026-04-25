@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { createClient } from '@supabase/supabase-js'
-import { checkAiGenerationLimit, recordAiGeneration, tooManyRequestsResponse } from '@/lib/rateLimit'
+import { checkAiGenerationLimit, checkCallLogLimit, recordAiGeneration, tooManyRequestsResponse } from '@/lib/rateLimit'
 import { searchVenuesForChallenge, formatVenuesForPrompt, type PlaceResult } from '@/lib/googlePlaces'
 
 const anthropic = new Anthropic()
@@ -101,6 +101,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'challengeDate (string) or dayNumber (number) is required' }, { status: 400 })
   }
 
+  const randomSeed = force ? Math.random().toString(36).substring(2, 9) : null
+
   const serviceClient = getServiceClient()
 
   // ── 3. DB cache check — skip Anthropic if row already exists ───────────────
@@ -115,8 +117,15 @@ export async function POST(request: NextRequest) {
     if (existing) return Response.json({ challenge: existing })
   }
 
-  // ── 4. Rate limit — skipped on force re-roll, charged otherwise ───────────
-  if (!force) {
+  // ── 4. Rate limit ──────────────────────────────────────────────────────────
+  if (force) {
+    // Force re-rolls are not subject to the 24h generation limit, but are
+    // capped at 5 per day to prevent unlimited Anthropic spend.
+    const { allowed, retryAfterMs } = await checkCallLogLimit(
+      user.id, 'generate-challenge-force', 5, 24 * 60 * 60 * 1000
+    )
+    if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
+  } else {
     const { allowed, retryAfterMs } = await checkAiGenerationLimit(user.id)
     if (!allowed) return tooManyRequestsResponse(retryAfterMs!)
   }
@@ -135,6 +144,15 @@ export async function POST(request: NextRequest) {
   if (profileError || !profile) {
     return Response.json({ error: 'Could not load user profile' }, { status: 500 })
   }
+
+  // ── 5b. Fetch recent completed challenge history ───────────────────────────
+  const { data: recentCompleted } = await serviceClient
+    .from('challenges')
+    .select('title, category, venue_stops')
+    .eq('user_id', user.id)
+    .eq('is_completed', true)
+    .order('completed_at', { ascending: false })
+    .limit(10)
 
   // ── 6. Sanitize all preference values before they touch the prompt ──────────
   const city        = sanitize(profile.city ?? '')
@@ -156,27 +174,32 @@ export async function POST(request: NextRequest) {
 
   // ── 7. Fetch real venues from Google Places ────────────────────────────────
   //
-  // We run searches in parallel for up to 3 of the user's venue type preferences.
-  // Each search returns up to 5 real, rated venues from Google.
-  // These become the "menu" Claude selects from — so it never has to hallucinate names.
+  // On normal generation: search user's preferred venue types, sort by rating.
+  // On force re-roll: inject 1-2 complementary types the user didn't select,
+  // then shuffle results so Claude sees different venues each time.
   //
+  const VARIETY_TYPES = ['Coffee shops', 'Parks', 'Art galleries', 'Markets', 'Bookshops']
+
+  let searchTypes = venueTypes
+  if (force && venueTypes.length > 0) {
+    const extras = VARIETY_TYPES
+      .filter(t => !venueTypes.includes(t))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 2)
+    searchTypes = [...venueTypes, ...extras]
+  }
+
   let googleVenues: PlaceResult[] = []
   let venueContext = ''
 
-  if (venueTypes.length > 0) {
-    googleVenues = await searchVenuesForChallenge(venueTypes, city, neighborhood, 5)
+  if (searchTypes.length > 0) {
+    googleVenues = await searchVenuesForChallenge(searchTypes, city, neighborhood, 5, force)
 
     if (googleVenues.length > 0) {
-      // Group venues by the type that was searched so the prompt is readable
-      const grouped = venueTypes.slice(0, 3).map(type => {
-        // Re-slice the results loosely by position (they're already sorted by rating)
-        const slice = googleVenues.slice(0, 5)
-        return `${type.toUpperCase()}:\n${formatVenuesForPrompt(slice, type)}`
-      })
       venueContext = `
-I searched Google Places and found these REAL, highly-rated venues near ${neighborhood ? `${neighborhood}, ` : ''}${city}:
+I searched Google Places and found these REAL venues near ${neighborhood ? `${neighborhood}, ` : ''}${city}:
 
-${grouped.join('\n\n')}
+${formatVenuesForPrompt(googleVenues, '')}
 
 You MUST choose 2-3 venues from the list above for the challenge stops.
 Do not invent any other venue names — only use venues from this list.`
@@ -192,6 +215,18 @@ Only name venues you are confident actually exist — if uncertain, describe the
   }
 
   // ── 8. Build the prompt ────────────────────────────────────────────────────
+
+  const historyLines = recentCompleted && recentCompleted.length > 0
+    ? recentCompleted.map(c => {
+        // Sanitize stored Claude output before re-injecting — prevents stored prompt injection
+        const title    = sanitize(c.title ?? '')
+        const category = sanitize(c.category ?? '')
+        const venueTypes = (c.venue_stops as { venue_type?: string }[] | null)
+          ?.map(s => sanitize(s.venue_type ?? '')).filter(Boolean).join(', ')
+        return `- ${title} (${category}${venueTypes ? `, stops at: ${venueTypes}` : ''})`
+      }).join('\n')
+    : null
+
   const prompt = `You are a spontaneous adventure planner for ${city}.
 
 USER PREFERENCES:
@@ -202,8 +237,15 @@ USER PREFERENCES:
 - Available: ${times.join(', ') || 'flexible'}
 - Budget: ${budget}
 - Time available: ${duration}
+${historyLines ? `
+COMPLETED CHALLENGES — do NOT repeat these categories, venue types, or activity styles:
+${historyLines}
+
+Generate something meaningfully different in category, venue type, and vibe from everything above.` : ''}
 ${venueContext}
 
+${randomSeed ? `RANDOMIZE SEED: ${randomSeed}
+Use this seed to push yourself toward an unexpected direction — a different neighborhood, a venue type you haven't defaulted to, an activity style that contrasts with the obvious choice.` : ''}
 YOUR TASK:
 Create a multi-stop spontaneous adventure with 2-3 specific venue stops.
 
@@ -214,6 +256,8 @@ RULES:
 4. The stops should flow together as an evening/afternoon/morning out — they should be geographically sensible (walkable or a short transit ride between them).
 5. The challenge must fit within the user's time and budget.
 6. Make it feel genuinely spontaneous — not a typical tourist itinerary.
+7. Maximum 1 bar, pub, or drinking-focused venue across all stops — even if bars are a user preference. "Prefers bars" means include one bar stop, not make every stop a bar. The remaining stops MUST be a clearly different venue type (coffee shop, museum, gallery, park, market, bookshop, etc.).
+8. No two stops can be the same venue type. Every stop must offer a genuinely different kind of experience.
 
 Respond ONLY with a single valid JSON object. No markdown, no explanation.
 
@@ -325,7 +369,9 @@ Respond ONLY with a single valid JSON object. No markdown, no explanation.
     if (saveError) throw new Error(`DB save failed: ${saveError.message}`)
 
     // ── 11. Record for rate limiting ─────────────────────────────────────────
-    await recordAiGeneration(user.id, 'generate-challenge')
+    // Force re-rolls use a separate endpoint key so they count against
+    // their own 5/day bucket, not the regular 1/day generation limit.
+    await recordAiGeneration(user.id, force ? 'generate-challenge-force' : 'generate-challenge')
 
     return Response.json({ challenge: savedChallenge })
 

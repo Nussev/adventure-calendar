@@ -227,3 +227,75 @@ Session ID extracted from JWT and logged alongside the call
 - **`app/profile/page.tsx`:** removed both `localStorage.setItem('adventurePreferences', ...)` calls (load-sync and save-sync). Supabase is the only store; the generate-challenge route fetches preferences server-side on every generation
 - **`components/DailyChallengeSection.tsx`:** randomize button now calls `getDailyChallenge(true)` directly instead of `clearChallengeCache()` + `getDailyChallenge()`. `force=true` is forwarded through to the API so the server regenerates even when a DB row exists
 - **Thinking:** the key insight is that the "cache" should live in the DB, not localStorage. localStorage is invisible to other devices and disappears on browser clear. A `challenges` row keyed to `(user_id, challenge_date)` gives the same "generate once per day" guarantee but persists across devices and sessions. The `force` flag threads through all layers — client → getDailyChallenge → API → DB — so randomize still works without a separate cache-clear mechanism
+
+---
+
+## April 25 2026
+
+### The repetition problem — and the retention mechanic that fixes it
+
+**The problem:** Every daily challenge was generated in isolation. Claude got user preferences but no memory of what it had already suggested. A user who completed "craft beer bar crawl" on day 3 could easily see another bar crawl on day 7. By day 10, patterns become obvious. By day 15, users start skipping challenges because nothing feels new. This is a churn problem disguised as a prompt quality problem — the real issue is that freshness decays exponentially without history.
+
+**What we considered:** Three approaches:
+1. Hard-code category rotation (day 1 = food, day 2 = outdoors, etc.) — too rigid, ignores preferences and actual user behavior
+2. Tag challenges with a deduplication hash and reject repeats — complex, requires multiple API calls, still doesn't communicate *why* to Claude
+3. Feed completed challenge history directly into the prompt — Claude understands the constraint semantically and reasons about novelty, not just exact-match deduplication
+
+Option 3 wins because it solves the problem at the right layer. Claude already reasons well about "what would feel different" — it just needed the context to do so.
+
+**Implementation:** Two changes, one mechanic.
+
+In `app/api/generate-challenge/route.ts` (step 5b), before building the prompt, we now query the `challenges` table for the last 10 completed challenges and extract `title`, `category`, and `venue_stop` types. These get injected into the prompt as a "do NOT repeat" block:
+
+```
+COMPLETED CHALLENGES — do NOT repeat these categories, venue types, or activity styles:
+- Craft Beer Crawl (Food & drink, stops at: Bar, Bar, Music venue)
+- Golden Gate Sunrise Hike (Outdoors, stops at: Park, Coffee shop)
+...
+
+Generate something meaningfully different in category, venue type, and vibe from everything above.
+```
+
+This works because Claude treats it as a constraint, not a filter. It doesn't just avoid the exact titles — it reasons about what "meaningfully different" means in context and picks something that contrasts along multiple dimensions (category, venue type, time of day, energy level).
+
+In `app/challenge/[day]/page.tsx`, the "Mark as Complete" button was previously a static UI element that called nothing. It now POSTs to `/api/complete-challenge` with `challenge.id` and `dayNumber`, handles loading state ("Saving…") and flips to a green "✓ Completed!" on success. The API was already complete — streak tracking, badge logic, and the `is_completed` flag on the `challenges` row were all there. The button just wasn't wired.
+
+**The flywheel:** Completing a challenge writes `is_completed = true` to the DB row. The next generation query picks that up. Claude's next challenge avoids those categories. The new challenge feels fresh and specific. The user wants to complete it. That completion feeds the next generation. The loop tightens over time rather than decaying.
+
+**Why this matters for the product:** Without history, day 15 is worse than day 1 — the model is generating from the same distribution forever. With history, day 15 is *better* than day 1 — the constraint space narrows, Claude has to work harder to find something novel, and the result is a challenge that genuinely feels tailored to someone who has already done 14 things. That's the opposite of the typical app experience where engagement drops after the first week.
+
+- **Thinking:** the right time to build this was the moment the "Mark as Complete" button existed — both pieces were always needed together. A completion that doesn't feed the next generation is a dead write. A generation that ignores completions produces repetition. They're one feature, not two.
+
+### Security audit — all criticals resolved
+
+Ran a full audit across API routes, Supabase RLS, environment variables, rate limiting, Anthropic key exposure, and prompt injection vectors. Seven issues found and fixed.
+
+**Critical (broken in production):**
+
+- **Silent RLS rejection on challenge completion** (`complete-challenge/route.ts`): The route used the anon Supabase client to `UPDATE challenges SET is_completed=true`. No UPDATE policy existed on the `challenges` table, so RLS silently rejected every write. `is_completed` was never set. This meant the calendar showed zero completions and the history injection mechanic (which queries `is_completed=true`) never fired. Fixed by switching to the service role client for this write — same pattern used by `generate-challenge`. Also added an explicit UPDATE policy in migration 013 as a fallback.
+
+- **`challenges: public read` RLS policy exposed all users' data** (`001_create_tables.sql`, migration 013): The original policy used `using (true)`, which was correct when challenges were pre-seeded public content. After user-specific AI-generated challenges were added to the same table, this policy let any request — including unauthenticated — read every user's challenges. User challenges contain inferred location data and personal preferences. Fixed: `using (user_id is null OR auth.uid() = user_id)` — pre-seeded rows stay public, user rows are scoped to their owner.
+
+**High (Anthropic cost exposure):**
+
+- **`/api/daily-challenge` — no authentication**: This legacy route called Anthropic with only an in-memory IP counter as protection. The in-memory counter resets on every serverless cold start, providing almost no real protection. The route was also dead — `getDailyChallenge.ts` had already been rewritten to call `/api/generate-challenge` instead. Deleted the file entirely.
+
+- **`force=true` bypassed rate limiting entirely**: Any authenticated user could POST `{ force: true }` and generate unlimited challenges, bypassing the 24h limit. Added `checkCallLogLimit` — a count-based rate limit on `api_call_log` — capping force re-rolls at 5 per day per user. Force re-rolls record under `'generate-challenge-force'` so they don't consume the regular 1/day budget.
+
+- **`/api/neighborhood-suggestions` — no rate limiting**: Authenticated users could spam this endpoint freely. Each call hits Anthropic. Wired up `checkCallLogLimit` (5 per hour) and `recordAiGeneration` around the Anthropic call.
+
+**Medium:**
+
+- **Stored prompt injection via challenge history**: Previous Claude output (challenge titles, categories, venue types) was being fed back into the next generation prompt without sanitization. If a response ever contained injection content that got stored in the DB, it would execute on every future generation for that user. Fixed by running all history fields through the existing `sanitize()` function before prompt injection.
+
+**Low:**
+
+- **Wrong table name in onboarding** (`onboarding/page.tsx`): `supabase.from('users')` was writing to a table that doesn't exist. Should be `profiles`. Column names were also wrong (`activities` → `preferred_activities`, `distance` → `max_distance`, etc.). Onboarding data had been silently discarded since the feature was built. Fixed.
+
+**Clean:**
+
+- `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_PLACES_API_KEY` all correctly server-side only, no `NEXT_PUBLIC_` prefix
+- Anthropic client never instantiated in client components
+- `sanitize()` already applied to all user-supplied preference fields before prompt injection
+
+- **Thinking:** the most valuable find was the silent RLS rejection — it broke the two most recent features (calendar completion display, history injection) without any visible error. Silent failures are the hardest class of bug to catch: everything appears to work, the button completes, the API returns 200, but the write never happened. The audit pattern (read every route, trace every DB write, check every table for missing policies) is the only way to catch them.

@@ -76,19 +76,18 @@ export default function OnboardingPage() {
       if (!user) throw new Error('Not authenticated')
 
       const { error } = await supabase
-        .from('users')
+        .from('profiles')
         .upsert({
-          id: user.id,
-          neighborhood: form.neighborhood,
-          city: form.city,
-          distance: form.distance,
-          activities: form.activities,
-          foods: form.foods,
-          available_times: form.times,
-          budget: form.budget,
-          duration: form.duration,
-          onboarded: true,
-          updated_at: new Date().toISOString(),
+          id:                   user.id,
+          neighborhood:         form.neighborhood,
+          city:                 form.city,
+          max_distance:         form.distance,
+          preferred_activities: form.activities,
+          preferred_foods:      form.foods,
+          available_times:      form.times,
+          budget:               form.budget,
+          max_duration:         form.duration,
+          onboarding_completed: true,
         })
 
       if (error) throw error
