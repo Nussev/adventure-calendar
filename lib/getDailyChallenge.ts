@@ -7,7 +7,7 @@ export interface VenueStop {
   venue_name:    string
   venue_address: string
   venue_type:    string
-  what_to_do:    string
+  what_to_do:    string[]   // array of short action fragments
   google_rating: number | null
   review_count:  number | null
   price_level:   string | null
@@ -67,7 +67,13 @@ export async function getDailyChallenge(force = false): Promise<DailyChallenge |
       estimated_duration: c.estimated_duration as string | undefined,
       estimated_cost:     c.estimated_cost as string | undefined,
       time_of_day:        c.time_of_day as string | undefined,
-      venue_stops:        c.venue_stops as VenueStop[] | undefined,
+      venue_stops:        ((c.venue_stops as VenueStop[] | undefined) ?? []).map(s => ({
+        ...s,
+        // Legacy rows stored what_to_do as a string — split into fragments for display
+        what_to_do: Array.isArray(s.what_to_do)
+          ? s.what_to_do
+          : (s.what_to_do as unknown as string).split(/\.\s+/).filter(Boolean),
+      })),
       is_completed:       c.is_completed as boolean | undefined,
     }
   } catch {

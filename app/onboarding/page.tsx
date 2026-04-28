@@ -4,14 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const ACTIVITIES: string[] = [
-  'Outdoors', 'Art & culture', 'Food & drink', 'Music',
-  'Markets', 'Walks & hikes', 'Sports', 'Nightlife', 'Photography', 'History'
-]
-
-const FOODS: string[] = [
+const INTERESTS: string[] = [
+  'Outdoors', 'Art & culture', 'Music', 'Markets',
+  'Walks & hikes', 'Sports', 'Nightlife', 'Photography', 'History',
   'Street food', 'Fine dining', 'Coffee shops', 'Vegan / veg',
-  'Brunch spots', 'Ethnic cuisines', 'Cocktail bars', 'Hidden gems'
+  'Brunch spots', 'Ethnic cuisines', 'Cocktail bars', 'Hidden gems',
 ]
 
 const TIMES: { label: string; sub: string }[] = [
@@ -29,8 +26,7 @@ interface FormState {
   neighborhood: string
   city: string
   distance: string
-  activities: string[]
-  foods: string[]
+  interests: string[]
   times: string[]
   budget: string
   duration: string
@@ -44,14 +40,13 @@ export default function OnboardingPage() {
     neighborhood: '',
     city: '',
     distance: 'Within 1 mile',
-    activities: [],
-    foods: [],
+    interests: [],
     times: [],
     budget: 'Under $25',
     duration: '2 hours',
   })
 
-  const totalSteps = 4
+  const totalSteps = 3
 
   function toggleItem(field: keyof FormState, item: string) {
     setForm(prev => {
@@ -82,8 +77,8 @@ export default function OnboardingPage() {
           neighborhood:         form.neighborhood,
           city:                 form.city,
           max_distance:         form.distance,
-          preferred_activities: form.activities,
-          preferred_foods:      form.foods,
+          preferred_activities: form.interests,
+          preferred_foods:      [],
           available_times:      form.times,
           budget:               form.budget,
           max_duration:         form.duration,
@@ -109,15 +104,13 @@ export default function OnboardingPage() {
         </p>
         <h1 className="text-2xl font-medium text-stone-900">
           {step === 1 && 'Where are you based?'}
-          {step === 2 && 'What do you love doing?'}
-          {step === 3 && 'Food & drink?'}
-          {step === 4 && 'Your availability'}
+          {step === 2 && "What are you into?"}
+          {step === 3 && 'Your availability'}
         </h1>
         <p className="text-sm text-stone-500 mt-1">
           {step === 1 && 'We use this to find nearby spots and routes.'}
           {step === 2 && 'Pick everything that sounds like you.'}
-          {step === 3 && "We'll tailor food and drink suggestions to your taste."}
-          {step === 4 && "When are you free and what's your budget?"}
+          {step === 3 && "When are you free and what's your budget?"}
         </p>
 
         {/* Progress bar */}
@@ -176,52 +169,30 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 2 — Activities */}
+        {/* Step 2 — Interests (activities + food/drink unified) */}
         {step === 2 && (
           <div>
             <label className="block text-sm font-medium text-stone-700 mb-3">Select all that apply</label>
             <div className="flex flex-wrap gap-2">
-              {ACTIVITIES.map(a => (
+              {INTERESTS.map(item => (
                 <button
-                  key={a}
-                  onClick={() => toggleItem('activities', a)}
+                  key={item}
+                  onClick={() => toggleItem('interests', item)}
                   className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
-                    form.activities.includes(a)
+                    form.interests.includes(item)
                       ? 'bg-orange-50 border-orange-400 text-orange-800'
                       : 'border-stone-200 text-stone-600 hover:border-stone-300'
                   }`}
                 >
-                  {a}
+                  {item}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Step 3 — Food */}
+        {/* Step 3 — Availability */}
         {step === 3 && (
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-3">Select all that apply</label>
-            <div className="flex flex-wrap gap-2">
-              {FOODS.map(f => (
-                <button
-                  key={f}
-                  onClick={() => toggleItem('foods', f)}
-                  className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
-                    form.foods.includes(f)
-                      ? 'bg-orange-50 border-orange-400 text-orange-800'
-                      : 'border-stone-200 text-stone-600 hover:border-stone-300'
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Step 4 — Availability */}
-        {step === 4 && (
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-3">When are you usually free?</label>

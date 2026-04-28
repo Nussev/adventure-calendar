@@ -41,11 +41,11 @@ export interface VenueStop {
   venue_name:    string
   venue_address: string
   venue_type:    string
-  what_to_do:    string   // what the user should specifically do at this stop
+  what_to_do:    string[]  // 2-3 short action fragments (not sentences)
   google_rating: number | null
   review_count:  number | null
   price_level:   string | null
-  tip:           string   // one practical tip for this stop
+  tip:           string    // one short practical tip
 }
 
 interface GeneratedChallenge {
@@ -232,8 +232,7 @@ Only name venues you are confident actually exist — if uncertain, describe the
 USER PREFERENCES:
 - City/area: ${city}${neighborhood ? `, ${neighborhood}` : ''}
 - Max travel distance: ${distance}
-- Activity interests: ${activities.join(', ') || 'open to anything'}
-- Food & drink interests: ${foods.join(', ') || 'open to anything'}
+- Interests: ${[...activities, ...foods].filter(Boolean).join(', ') || 'open to anything'}
 - Available: ${times.join(', ') || 'flexible'}
 - Budget: ${budget}
 - Time available: ${duration}
@@ -252,7 +251,7 @@ Create a multi-stop spontaneous adventure with 2-3 specific venue stops.
 RULES:
 1. Each stop must be a specific, named venue — not generic ("a bar") or made-up.
 2. ${noVenueData ? 'Only name venues you are confident exist in ' + city + '.' : 'Only use venues from the Google Places list above.'}
-3. Each stop needs a clear "what to do" — not just "visit this place" but "order the X, sit at the Y, try the Z".
+3. Each stop needs 2-3 short action fragments in what_to_do — short phrases like "Order the X", "Ask for Y", "Sit at the Z counter". No full sentences.
 4. The stops should flow together as an evening/afternoon/morning out — they should be geographically sensible (walkable or a short transit ride between them).
 5. The challenge must fit within the user's time and budget.
 6. Make it feel genuinely spontaneous — not a typical tourist itinerary.
@@ -275,11 +274,11 @@ Respond ONLY with a single valid JSON object. No markdown, no explanation.
       "venue_name": "Exact name of the venue",
       "venue_address": "Full street address",
       "venue_type": "Restaurant | Bar | Coffee shop | Museum | Gallery | Park | Music venue | Market | Other",
-      "what_to_do": "2-3 sentences: exactly what to do, order, or experience at this stop",
+      "what_to_do": ["Short action fragment — not a sentence", "e.g. Order the X, ask for Y, try the Z", "One more specific action"],
       "google_rating": 4.5,
       "review_count": 312,
       "price_level": "$ | $$ | $$$ | $$$$",
-      "tip": "One practical tip — timing, what to avoid, insider knowledge"
+      "tip": "One short practical tip — timing, what to avoid, insider knowledge"
     }
   ]
 }`

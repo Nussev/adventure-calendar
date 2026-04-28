@@ -5,14 +5,11 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { BottomNav } from '@/components/BottomNav'
 
-const ACTIVITIES: string[] = [
-  'Outdoors', 'Art & culture', 'Food & drink', 'Music',
-  'Markets', 'Walks & hikes', 'Sports', 'Nightlife', 'Photography', 'History'
-]
-
-const FOODS: string[] = [
+const INTERESTS: string[] = [
+  'Outdoors', 'Art & culture', 'Music', 'Markets',
+  'Walks & hikes', 'Sports', 'Nightlife', 'Photography', 'History',
   'Street food', 'Fine dining', 'Coffee shops', 'Vegan / veg',
-  'Brunch spots', 'Ethnic cuisines', 'Cocktail bars', 'Hidden gems'
+  'Brunch spots', 'Ethnic cuisines', 'Cocktail bars', 'Hidden gems',
 ]
 
 // Venue types — these map directly to what we ask Claude to suggest
@@ -47,8 +44,7 @@ interface FormState {
   neighborhood: string
   city:         string
   distance:     string
-  activities:   string[]
-  foods:        string[]
+  interests:    string[]
   venue_types:  string[]
   times:        string[]
   budget:       string
@@ -75,8 +71,7 @@ export default function ProfilePage() {
     neighborhood: '',
     city:         '',
     distance:     'Within 1 mile',
-    activities:   [],
-    foods:        [],
+    interests:    [],
     venue_types:  [],
     times:        [],
     budget:       'Under $25',
@@ -112,8 +107,10 @@ export default function ProfilePage() {
           neighborhood: profile.neighborhood || '',
           city:         profile.city || '',
           distance:     profile.max_distance || 'Within 1 mile',
-          activities:   profile.preferred_activities || [],
-          foods:        profile.preferred_foods || [],
+          interests:    [
+            ...(profile.preferred_activities || []),
+            ...(profile.preferred_foods || []),
+          ],
           venue_types:  profile.preferred_venue_types || [],
           times:        profile.available_times || [],
           budget:       profile.budget || 'Under $25',
@@ -143,8 +140,8 @@ export default function ProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           city: form.city,
-          activities: form.activities,
-          foods: form.foods,
+          activities: form.interests,
+          foods: [],
           budget: form.budget,
         }),
       })
@@ -188,8 +185,8 @@ export default function ProfilePage() {
           neighborhood:          form.neighborhood,
           city:                  form.city,
           max_distance:          form.distance,
-          preferred_activities:  form.activities,
-          preferred_foods:       form.foods,
+          preferred_activities:  form.interests,
+          preferred_foods:       [],
           preferred_venue_types: form.venue_types,
           available_times:       form.times,
           budget:                form.budget,
@@ -260,22 +257,24 @@ export default function ProfilePage() {
           <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Personal</h2>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">Name</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5">Name</label>
               <input
                 type="text"
                 placeholder="Your name"
                 value={form.full_name}
                 onChange={e => setForm(prev => ({ ...prev, full_name: e.target.value }))}
-                className="w-full px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white text-stone-900"
+                className="w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                style={{ background: 'var(--card)', color: 'var(--foreground)', borderColor: 'var(--border)' }}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5">Email</label>
               <input
                 type="email"
                 value={user?.email || ''}
                 disabled
-                className="w-full px-3 py-2.5 text-sm border border-stone-200 rounded-lg bg-stone-50 text-stone-400 cursor-not-allowed"
+                className="w-full px-3 py-2.5 text-sm border rounded-lg cursor-not-allowed opacity-50"
+                style={{ background: 'var(--muted)', color: 'var(--foreground)', borderColor: 'var(--border)' }}
               />
             </div>
           </div>
@@ -286,19 +285,20 @@ export default function ProfilePage() {
           <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Location</h2>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">City</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5">City</label>
               <input
                 type="text"
                 placeholder="e.g. New York"
                 value={form.city}
                 onChange={e => setForm(prev => ({ ...prev, city: e.target.value }))}
-                className="w-full px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white text-stone-900"
+                className="w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                style={{ background: 'var(--card)', color: 'var(--foreground)', borderColor: 'var(--border)' }}
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium text-stone-700">Neighborhood</label>
+                <label className="text-sm font-medium text-stone-700 dark:text-stone-300">Neighborhood</label>
                 <button
                   onClick={fetchNeighborhoodSuggestions}
                   disabled={loadingSuggestions || !form.city.trim()}
@@ -313,15 +313,16 @@ export default function ProfilePage() {
                 placeholder="e.g. Williamsburg, Brooklyn"
                 value={form.neighborhood}
                 onChange={e => setForm(prev => ({ ...prev, neighborhood: e.target.value }))}
-                className="w-full px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white text-stone-900"
+                className="w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                style={{ background: 'var(--card)', color: 'var(--foreground)', borderColor: 'var(--border)' }}
               />
 
               {suggestionError && (
                 <p className="text-xs text-red-500 mt-2">{suggestionError}</p>
               )}
               {neighborhoodSuggestions.length > 0 && (
-                <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                  <p className="text-xs font-medium text-orange-700 mb-2">AI suggestions based on your preferences:</p>
+                <div className="mt-2 p-3 rounded-lg" style={{ background: 'var(--accent-light)', border: '1px solid rgba(216,90,48,0.2)' }}>
+                  <p className="text-xs font-medium mb-2" style={{ color: 'var(--accent)' }}>AI suggestions based on your preferences:</p>
                   <div className="space-y-2">
                     {neighborhoodSuggestions.map((s, i) => (
                       <button
@@ -330,10 +331,10 @@ export default function ProfilePage() {
                           setForm(prev => ({ ...prev, neighborhood: s.name }))
                           setNeighborhoodSuggestions([])
                         }}
-                        className="w-full text-left p-2 rounded-lg hover:bg-orange-100 transition-colors"
+                        className="w-full text-left p-2 rounded-lg transition-colors hover:opacity-80"
                       >
-                        <div className="text-sm font-medium text-stone-800">{s.name}</div>
-                        <div className="text-xs text-stone-500 mt-0.5">{s.reason}</div>
+                        <div className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{s.name}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--foreground)', opacity: 0.55 }}>{s.reason}</div>
                       </button>
                     ))}
                   </div>
@@ -342,7 +343,7 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">Max distance</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">Max distance</label>
               <div className="space-y-2">
                 {DISTANCES.map(d => (
                   <button
@@ -350,8 +351,8 @@ export default function ProfilePage() {
                     onClick={() => selectSingle('distance', d)}
                     className={`w-full text-left px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                       form.distance === d
-                        ? 'border-orange-400 bg-orange-50 text-orange-800'
-                        : 'border-stone-200 text-stone-600 hover:border-stone-300'
+                        ? 'border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-[#2a1a12] text-orange-800 dark:text-orange-400'
+                        : 'border-stone-200 dark:border-white/10 text-stone-600 dark:text-stone-300 hover:border-stone-300 dark:hover:border-white/20'
                     }`}
                   >
                     {d}
@@ -362,41 +363,21 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Activities */}
+        {/* Interests */}
         <section>
-          <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Activities I love</h2>
+          <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">What you&apos;re into</h2>
           <div className="flex flex-wrap gap-2">
-            {ACTIVITIES.map(a => (
+            {INTERESTS.map(item => (
               <button
-                key={a}
-                onClick={() => toggleItem('activities', a)}
+                key={item}
+                onClick={() => toggleItem('interests', item)}
                 className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
-                  form.activities.includes(a)
-                    ? 'bg-orange-50 border-orange-400 text-orange-800'
-                    : 'border-stone-200 text-stone-600 hover:border-stone-300'
+                  form.interests.includes(item)
+                    ? 'bg-orange-50 dark:bg-[#2a1a12] border-orange-400 dark:border-orange-500 text-orange-800 dark:text-orange-400'
+                    : 'border-stone-200 dark:border-white/10 text-stone-600 dark:text-stone-300 hover:border-stone-300 dark:hover:border-white/20'
                 }`}
               >
-                {a}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Food */}
-        <section>
-          <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Food & drink</h2>
-          <div className="flex flex-wrap gap-2">
-            {FOODS.map(f => (
-              <button
-                key={f}
-                onClick={() => toggleItem('foods', f)}
-                className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
-                  form.foods.includes(f)
-                    ? 'bg-orange-50 border-orange-400 text-orange-800'
-                    : 'border-stone-200 text-stone-600 hover:border-stone-300'
-                }`}
-              >
-                {f}
+                {item}
               </button>
             ))}
           </div>
@@ -415,8 +396,8 @@ export default function ProfilePage() {
                 onClick={() => toggleItem('venue_types', label)}
                 className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors flex items-center gap-1.5 ${
                   form.venue_types.includes(label)
-                    ? 'bg-orange-50 border-orange-400 text-orange-800'
-                    : 'border-stone-200 text-stone-600 hover:border-stone-300'
+                    ? 'bg-orange-50 dark:bg-[#2a1a12] border-orange-400 dark:border-orange-500 text-orange-800 dark:text-orange-400'
+                    : 'border-stone-200 dark:border-white/10 text-stone-600 dark:text-stone-300 hover:border-stone-300 dark:hover:border-white/20'
                 }`}
               >
                 <span>{emoji}</span>
@@ -431,7 +412,7 @@ export default function ProfilePage() {
           <h2 className="text-xs font-medium tracking-widest text-stone-400 uppercase mb-3">Availability</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">When are you free?</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">When are you free?</label>
               <div className="grid grid-cols-2 gap-2">
                 {TIMES.map(t => (
                   <button
@@ -439,23 +420,24 @@ export default function ProfilePage() {
                     onClick={() => toggleItem('times', t.label)}
                     className={`p-3 rounded-lg border text-center transition-colors ${
                       form.times.includes(t.label)
-                        ? 'border-orange-400 bg-orange-50'
-                        : 'border-stone-200 hover:border-stone-300'
+                        ? 'border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-[#2a1a12]'
+                        : 'border-stone-200 dark:border-white/10 hover:border-stone-300 dark:hover:border-white/20'
                     }`}
                   >
-                    <div className="text-sm font-medium text-stone-800">{t.label}</div>
-                    <div className="text-xs text-stone-400 mt-0.5">{t.sub}</div>
+                    <div className="text-sm font-medium text-stone-800 dark:text-stone-200">{t.label}</div>
+                    <div className="text-xs text-stone-400 dark:text-stone-500 mt-0.5">{t.sub}</div>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">Challenge time limit</label>
+              <label className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5">Challenge time limit</label>
               <select
                 value={form.duration}
                 onChange={e => selectSingle('duration', e.target.value)}
-                className="w-full px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white text-stone-900"
+                className="w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
+                style={{ background: 'var(--card)', color: 'var(--foreground)', borderColor: 'var(--border)' }}
               >
                 {DURATIONS.map(d => <option key={d}>{d}</option>)}
               </select>
@@ -473,8 +455,8 @@ export default function ProfilePage() {
                 onClick={() => selectSingle('budget', b)}
                 className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
                   form.budget === b
-                    ? 'bg-orange-50 border-orange-400 text-orange-800'
-                    : 'border-stone-200 text-stone-600 hover:border-stone-300'
+                    ? 'bg-orange-50 dark:bg-[#2a1a12] border-orange-400 dark:border-orange-500 text-orange-800 dark:text-orange-400'
+                    : 'border-stone-200 dark:border-white/10 text-stone-600 dark:text-stone-300 hover:border-stone-300 dark:hover:border-white/20'
                 }`}
               >
                 {b}
@@ -487,7 +469,7 @@ export default function ProfilePage() {
         <section>
           <button
             onClick={handleSignOut}
-            className="w-full py-3 rounded-xl border border-stone-200 text-sm font-medium text-stone-500 hover:bg-stone-50 transition-colors"
+            className="w-full py-3 rounded-xl border text-sm font-medium transition-colors border-stone-200 dark:border-white/10 text-stone-500 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-white/5"
           >
             Sign out
           </button>

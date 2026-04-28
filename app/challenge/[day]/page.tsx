@@ -105,11 +105,19 @@ export default function ChallengePage() {
 
         {/* Title */}
         <h1
-          className="text-[1.9rem] font-black leading-tight mb-3"
+          className="text-[1.9rem] font-black leading-tight mb-2"
           style={{ color: "var(--foreground)" }}
         >
           {challenge.title}
         </h1>
+
+        {/* Description — compact under the title */}
+        <p
+          className="text-sm leading-snug mb-4"
+          style={{ color: "var(--foreground)", opacity: 0.5 }}
+        >
+          {challenge.description}
+        </p>
 
         {/* Meta tags */}
         <div className="flex flex-wrap gap-2 mb-6">
@@ -120,23 +128,6 @@ export default function ChallengePage() {
             <span className="w-1.5 h-1.5 rounded-full bg-current" />
             {diff.label}
           </span>
-        </div>
-
-        {/* Description */}
-        <div
-          className="rounded-2xl p-5 mb-5"
-          style={{
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-          }}
-        >
-          <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-3 text-[#D85A30]">
-            The Adventure
-          </h2>
-          <p className="text-base leading-relaxed" style={{ color: "var(--foreground)", opacity: 0.75 }}>
-            {challenge.description}
-          </p>
         </div>
 
         {/* ── Venue stops ── */}
@@ -215,7 +206,7 @@ function VenueStopCard({ stop }: { stop: VenueStop }) {
     >
       {/* Stop number stripe */}
       <div
-        className="h-[3px]"
+        className="h-0.75"
         style={{ background: "linear-gradient(90deg, #D85A30, #f97316, #fbbf24)" }}
       />
 
@@ -262,27 +253,29 @@ function VenueStopCard({ stop }: { stop: VenueStop }) {
         </div>
 
         {/* Address */}
-        <p className="text-[11px] mb-3 flex items-start gap-1.5" style={{ color: "var(--foreground)", opacity: 0.45 }}>
-          <PinIcon className="w-3 h-3 mt-0.5 shrink-0 text-[#D85A30]" />
+        <p className="text-[11px] mb-3 flex items-center gap-1.5 truncate" style={{ color: "var(--foreground)", opacity: 0.4 }}>
+          <PinIcon className="w-3 h-3 shrink-0 text-[#D85A30]" />
           {stop.venue_address}
         </p>
 
-        {/* What to do */}
-        <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--foreground)", opacity: 0.75 }}>
-          {stop.what_to_do}
-        </p>
+        {/* What to do — bullet list of short actions */}
+        <ul className="space-y-1 mb-2">
+          {(Array.isArray(stop.what_to_do)
+            ? stop.what_to_do
+            : (stop.what_to_do as unknown as string).split(/\.\s+/).filter(Boolean)
+          ).map((action, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm leading-snug" style={{ color: "var(--foreground)", opacity: 0.75 }}>
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#D85A30", opacity: 0.7 }} />
+              {action}
+            </li>
+          ))}
+        </ul>
 
         {/* Tip */}
         {stop.tip && (
-          <div
-            className="rounded-xl px-3 py-2 flex items-start gap-2"
-            style={{ background: "var(--accent-light)" }}
-          >
-            <span className="text-[#D85A30] text-xs mt-0.5 shrink-0">💡</span>
-            <p className="text-xs" style={{ color: "var(--foreground)", opacity: 0.7 }}>
-              {stop.tip}
-            </p>
-          </div>
+          <p className="text-xs" style={{ color: "var(--foreground)", opacity: 0.4 }}>
+            💡 {stop.tip}
+          </p>
         )}
       </div>
     </div>

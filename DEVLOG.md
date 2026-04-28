@@ -299,3 +299,36 @@ Ran a full audit across API routes, Supabase RLS, environment variables, rate li
 - `sanitize()` already applied to all user-supplied preference fields before prompt injection
 
 - **Thinking:** the most valuable find was the silent RLS rejection — it broke the two most recent features (calendar completion display, history injection) without any visible error. Silent failures are the hardest class of bug to catch: everything appears to work, the button completes, the API returns 200, but the write never happened. The audit pattern (read every route, trace every DB write, check every table for missing policies) is the only way to catch them.
+
+  Product Manager Summary
+                         
+  ▎ Adventure Calendar — Sprint Update (April 25)
+  ▎                                                                                                                                                        
+  ▎ What shipped:                                                                                                                                          
+  ▎                                                                                                                                                        
+  ▎ Retention mechanic — challenge history + variety engine                                                                                                
+  ▎ The app now remembers what you've done. When generating your next challenge, Claude is given a list of your last 10 completed challenges and instructed
+  ▎  to avoid repeating the same categories, venue types, and activity styles. Completing challenges now feeds the next generation — the longer you use the
+  ▎  app, the more tailored and varied your challenges become. The "Mark as Complete" button is also fully wired up end-to-end for the first time.
+  ▎                                                                                                                                                        
+  ▎ Calendar UI with real data                                                                                                                             
+  ▎ The 30-day calendar grid now reflects your actual completion history pulled from the database. Completed days show in coral, today's cell is tappable 
+  ▎ and navigates to the challenge, future days show as locked. Streak and progress counters are live data, not hardcoded.                                 
+  ▎               
+  ▎ Venue variety fix                                                                                                                                      
+  ▎ Challenges no longer double up on the same venue type (e.g., two bars). A prompt constraint now caps drinking venues at one per challenge and enforces 
+  ▎ variety across stops. On re-roll, the venue search is shuffled and expanded with complementary types so Claude has genuinely different options to      
+  ▎ choose from.  
+  ▎                                                                                                                                                        
+  ▎ Security hardening (pre-launch)                                                                                                                        
+  ▎ Full security audit completed. Seven vulnerabilities found and fixed:
+  ▎ - User challenge data was readable by anyone (including unauthenticated) — fixed with scoped RLS policy                                                
+  ▎ - Completion tracking silently failed due to a missing database policy — fixed; this also unblocked the history mechanic                               
+  ▎ - An unauthenticated API endpoint was open to the internet, exposing Anthropic spend — removed                                                         
+  ▎ - The "Randomize" button had no rate limit, allowing unlimited AI generation — capped at 5/day                                                         
+  ▎ - AI suggestions had no rate limit — capped at 5/hour                                                                                                  
+  ▎ - Onboarding data was being written to a non-existent table and silently discarded — fixed                                                             
+  ▎ - Previous AI outputs were being re-injected into prompts without sanitization — fixed                                                                 
+  ▎                                                                                                                                                        
+  ▎ State of the app: Core loop is fully functional and secure — user logs in → sets preferences → gets a personalized daily challenge → completes it →    
+  ▎ next challenge is meaningfully different. Ready for first external users.  
